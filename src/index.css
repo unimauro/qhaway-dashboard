@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Leaflet en dark mode: el contenedor lo controla Tailwind, los tiles tienen su propio filtro */
+.leaflet-container { background: transparent; font: inherit; }
+.dark .leaflet-tile { filter: brightness(0.6) invert(1) contrast(1.05) hue-rotate(190deg) saturate(0.35); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #fff; color: #1e293b; }
+.dark .leaflet-popup-content-wrapper, .dark .leaflet-popup-tip { background: #1e293b; color: #e2e8f0; }
+.leaflet-bar a { background: #fff; color: #1e293b; }
+.dark .leaflet-bar a { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+
+/* Scrollbar discreto */
+::-webkit-scrollbar { height: 8px; width: 8px; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-fade { animation: fadeIn .35s ease both; }
