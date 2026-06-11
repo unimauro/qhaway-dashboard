@@ -17,7 +17,7 @@ import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
-type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNO REGIONAL' | 'GOBIERNO LOCAL'
+type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
 
 const FASE_LABEL: Record<FaseMapa, string> = {
   pim: 'PIM', devengado: 'Devengado', girado: 'Girado',
@@ -26,8 +26,8 @@ const FASE_LABEL: Record<FaseMapa, string> = {
 const NIVEL_OPTS: { value: Nivel; label: string }[] = [
   { value: 'Todos', label: 'Todos los niveles' },
   { value: 'GOBIERNO NACIONAL', label: 'Gobierno Nacional' },
-  { value: 'GOBIERNO REGIONAL', label: 'Gobierno Regional' },
-  { value: 'GOBIERNO LOCAL', label: 'Gobierno Local' },
+  { value: 'GOBIERNOS REGIONALES', label: 'Gobiernos Regionales' },
+  { value: 'GOBIERNOS LOCALES', label: 'Gobiernos Locales' },
 ]
 
 /** Color por % ejecución (fracción 0..1): <0.5 rojo, 0.5–0.8 ámbar, >0.8 verde */

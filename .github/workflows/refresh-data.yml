@@ -1,0 +1,37 @@
+name: Actualizar datos del MEF (mensual)
+
+# Corre el último viernes de cada mes a las 06:00 (Perú, UTC-5 → 11:00 UTC).
+# Regenera los JSON de presupuesto desde la API del MEF y, si hay cambios, hace
+# commit; el deploy a Pages se dispara solo por el push. GitHub Actions es gratis
+# en repos públicos: costo de infraestructura ≈ S/ 0.
+on:
+  schedule:
+    - cron: '0 11 28-31 * 5'   # días 28-31 que caigan en viernes (último viernes del mes)
+  workflow_dispatch:            # permite ejecutarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descubrir tablas anuales del MEF
+        run: python etl/discover_annual.py
+      - name: Regenerar JSON de presupuesto
+        run: python etl/build_mef.py
+      - name: Commit si hay cambios
+        run: |
+          git config user.name "qhaway-bot"
+          git config user.email "bot@users.noreplace.github.com"
+          git add public/data/*.json
+          if git diff --staged --quiet; then
+            echo "Sin cambios en los datos."
+          else
+            git commit -m "datos: actualización mensual MEF ($(date +%Y-%m-%d))"
+            git push
+          fi
