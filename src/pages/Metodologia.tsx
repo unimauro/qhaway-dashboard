@@ -113,6 +113,10 @@ const FAQ: FaqItem[] = [
     a: 'Por tres motivos: (1) corte de fecha distinto; (2) nivel de agregación distinto (aquí agrupamos por año, nivel, función o territorio); y (3) criterio de territorialización: parte de la información se atribuye a la ubicación de la unidad ejecutora y no siempre a la ubicación física de la obra.',
   },
   {
+    q: '¿Por qué el presupuesto histórico llega solo hasta departamento y no a distrito?',
+    a: 'Es un vacío de la propia fuente, no del observatorio. El SIAF del MEF solo georreferencia el gasto a su DESTINO a nivel de departamento (campo DEPARTAMENTO_META); no existe provincia ni distrito de destino. El único nivel distrital disponible es el de la UNIDAD EJECUTORA (dónde está la entidad que administra el gasto), que para el grueso del Gobierno Nacional figura en Lima, no en el territorio donde realmente se invierte. En otras palabras: el Estado peruano no registra públicamente en qué distrito aterriza la mayor parte de su presupuesto. Por eso QHAWAY muestra el detalle por destino a nivel departamental para todos los años (2004-2026), el detalle distrital por ejecutora donde está disponible (2025), y visibiliza explícitamente este vacío de transparencia.',
+  },
+  {
     q: '¿Qué significa cada fase del gasto?',
     a: 'PIA es lo aprobado al inicio; PIM es el presupuesto modificado vigente; Certificado reserva presupuesto; Comprometido lo obliga contractualmente; Devengado reconoce la obligación al recibir el bien o servicio; y Girado paga. El glosario detalla cada una.',
   },
