@@ -183,6 +183,66 @@ export default function Metodologia() {
         explícito anti-sobreinterpretación.
       </SectionIntro>
 
+      {/* Presentación QHAWAY 2.0 */}
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-br from-brand-500/10 to-gold-400/10 px-5 sm:px-7 py-6 border-b border-ink-200 dark:border-ink-800">
+          <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50">QHAWAY 2.0: El Observatorio Territorial del Perú</h2>
+          <p className="text-sm text-brand-700 dark:text-brand-300 mt-1">FIEECS — Universidad Nacional de Ingeniería</p>
+        </div>
+        <div className="px-5 sm:px-7 py-6 space-y-4 text-[15px] leading-relaxed text-ink-600 dark:text-ink-200 max-w-3xl">
+          <p>
+            <strong className="text-ink-900 dark:text-ink-50">QHAWAY significa mirar.</strong> Pero no
+            cualquier mirada. Es la mirada larga de los pueblos que observan la montaña, el río, el bosque,
+            el mar y la chacra para comprender los signos de la vida. Es también la mirada que interroga al
+            poder y pregunta dónde están puestas las manos del Estado, a quién alimentan sus decisiones y qué
+            futuros construyen sus presupuestos.
+          </p>
+          <p>
+            QHAWAY 2.0 es el <strong className="text-ink-900 dark:text-ink-50">Observatorio Territorial del
+            Perú</strong> de la FIEECS-UNI, un espacio abierto de lectura, análisis y democratización de la
+            información pública. A partir de los datos del presupuesto público, su ejecución territorial y
+            diversas fuentes oficiales, el observatorio permite seguir el rastro de los recursos del Estado en
+            los territorios y comprender cómo estos se traducen —o no— en bienestar, conservación,
+            infraestructura, derechos, naturaleza y oportunidades para las personas, sus territorios y sus
+            vidas en desarrollo.
+          </p>
+          <p>
+            Creemos que el presupuesto es mucho más que una cifra. Es una declaración política sobre aquello
+            que una sociedad decide cuidar. Allí donde se asignan recursos se revelan prioridades; allí donde
+            no llegan, también se expresan silencios, ausencias y desigualdades. Por ello, QHAWAY busca hacer
+            visible aquello que suele permanecer oculto tras tablas, códigos y reportes técnicos: las huellas
+            concretas de las decisiones públicas sobre la vida cotidiana de las personas y los territorios.
+          </p>
+          <p>
+            Inspirado en las tradiciones de pensamiento crítico del Perú, este observatorio entiende que los
+            territorios no son espacios vacíos ni simples divisiones administrativas. Son geografías vivas
+            donde conviven memorias, economías, culturas, ecosistemas y proyectos colectivos. Desde esta
+            perspectiva, los datos públicos dejan de ser patrimonio exclusivo de especialistas para
+            convertirse en herramientas de reflexión y acción ciudadana.
+          </p>
+          <p>
+            QHAWAY 2.0 ha sido concebido para servir a comunidades locales, gobiernos subnacionales,
+            organizaciones sociales, investigadores e investigadoras, estudiantes y ciudadanía en general. Su
+            propósito es facilitar una lectura accesible y rigurosa del presupuesto público, fortaleciendo la
+            capacidad de los territorios para comprender las decisiones estatales, dialogar con ellas y
+            participar informadamente en la construcción de su propio desarrollo.
+          </p>
+          <p>
+            Esta página explica cómo interpretar cada gráfico y visualización, define los principales conceptos
+            presupuestales y responde las preguntas más frecuentes. Asimismo, incorpora un criterio explícito
+            de <strong className="text-ink-900 dark:text-ink-50">prudencia analítica</strong>: los datos
+            permiten observar tendencias y patrones, pero no deben ser utilizados para realizar conclusiones
+            apresuradas o interpretaciones que excedan la evidencia disponible.
+          </p>
+          <p className="text-ink-500 dark:text-ink-400 italic border-l-2 border-brand-500 pl-4">
+            Porque observar también es un acto de ciudadanía. Porque los territorios tienen derecho a conocer
+            cómo se decide sobre su presente y su futuro. Y porque, al seguir el camino del presupuesto,
+            podemos reconocer con mayor claridad hacia dónde se orientan las manos del Estado y qué formas de
+            vida están siendo sostenidas, protegidas o postergadas.
+          </p>
+        </div>
+      </Card>
+
       {/* Ficha de datos */}
       <Card>
         <CardHeader

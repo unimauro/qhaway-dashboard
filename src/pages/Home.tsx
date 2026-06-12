@@ -3,6 +3,7 @@ import { getMeta, getSerieNacional, getPorNivel, loadJSON } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
 import { solesCompact, pct, ejecucion } from '../lib/format'
 import SerieChart, { type PuntoMensual } from '../components/SerieChart'
+import IntroSplash from '../components/IntroSplash'
 import {
   Card, CardHeader, HelpTip, KPI, Pill, Loading, ErrorBox,
 } from '../components/ui'
@@ -63,6 +64,7 @@ function KpisYGrafico() {
 
   return (
     <>
+      <IntroSplash />
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <KPI
           label={`PIM nacional ${ultima?.year ?? ''}`}
