@@ -9,6 +9,7 @@ import {
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import YearStrip from '../components/YearStrip'
 
 /* ───────────────────────── Tipos de los datasets del explorador ───────────────────────── */
 
@@ -75,7 +76,6 @@ const ATRIB_OPTS: { value: Atribucion; label: string }[] = [
 
 const FALLBACK_YEAR = 2025
 const YEARS = [2026, 2025, 2024, 2023, 2022, 2021]
-const YEAR_OPTS: { value: number; label: string }[] = YEARS.map((y) => ({ value: y, label: String(y) }))
 
 /**
  * Resultado de una carga año-aware: filas + de qué año salieron realmente
@@ -314,7 +314,7 @@ function ExploradorBody({ geo }: { geo: ReturnType<typeof useAsync<unknown>> }) 
       {/* ── Panel de filtros sticky ── */}
       <div className="sticky top-0 z-30 -mx-2 px-2 py-2 backdrop-blur bg-white/80 dark:bg-ink-950/80 border-b border-ink-200 dark:border-ink-800 rounded-b-xl">
         <div className="flex flex-wrap items-end gap-3">
-          <Select<number> value={year} onChange={setYear} options={YEAR_OPTS} label="Año" />
+          <div className="w-full sm:w-auto sm:min-w-[280px]"><YearStrip years={YEARS} value={year} onChange={setYear} /></div>
           <Select<Dimension>
             value={dimension}
             onChange={(d) => { setDimension(d); setCat(TODOS) }}
