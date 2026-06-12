@@ -5,7 +5,6 @@ endpoint de cubo OLAP. Datos estáticos por año → cacheados en memoria.
 import os
 import time
 from collections import deque
-from functools import lru_cache
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -83,7 +82,6 @@ def health():
 
 
 @app.get("/api/meta")
-@lru_cache(maxsize=1)
 def meta():
     years = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_nacional ORDER BY ano")]
     dyears = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_distrito ORDER BY ano DESC")]
@@ -98,19 +96,16 @@ def meta():
 
 
 @app.get("/api/serie-nacional")
-@lru_cache(maxsize=1)
 def serie_nacional():
     return q("SELECT ano AS year, pia, pim, certificado, devengado, girado FROM gasto_nacional ORDER BY ano")
 
 
 @app.get("/api/por-departamento-historico")
-@lru_cache(maxsize=1)
 def depto_hist():
     return q("SELECT ano AS year, ubigeo, departamento, pia, pim, certificado, devengado, girado "
              "FROM gasto_depto_hist ORDER BY ano, ubigeo")
 
 
-@lru_cache(maxsize=64)
 def _por_distrito(year: int):
     return q("SELECT ubigeo, departamento, provincia, distrito, nivel, pia, pim, devengado, girado "
              "FROM gasto_distrito WHERE ano=%s", (year,))
@@ -125,25 +120,21 @@ def por_distrito(year: int):
 
 
 @app.get("/api/por-funcion/{year}")
-@lru_cache(maxsize=64)
 def por_funcion(year: int):
     return q("SELECT funcion, pim, devengado, girado FROM gasto_funcion WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
 @app.get("/api/por-sector/{year}")
-@lru_cache(maxsize=64)
 def por_sector(year: int):
     return q("SELECT sector, pim, devengado FROM gasto_sector WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
 @app.get("/api/por-nivel/{year}")
-@lru_cache(maxsize=64)
 def por_nivel(year: int):
     return q("SELECT ano AS year, nivel, pia, pim, devengado, girado FROM gasto_nivel WHERE ano=%s", (year,))
 
 
 @app.get("/api/flujo-fases/{year}")
-@lru_cache(maxsize=64)
 def flujo(year: int):
     r = q("SELECT pia, pim, certificado, devengado, girado FROM gasto_nacional WHERE ano=%s", (year,))
     if not r:
@@ -152,14 +143,12 @@ def flujo(year: int):
 
 
 @app.get("/api/explorador-funcion-meta/{year}")
-@lru_cache(maxsize=64)
 def expl_funcion(year: int):
     return q("SELECT ubigeo, departamento, funcion, nivel, pim, devengado "
              "FROM gasto_meta_funcion WHERE ano=%s", (year,))
 
 
 @app.get("/api/explorador-fuente-meta/{year}")
-@lru_cache(maxsize=64)
 def expl_fuente(year: int):
     return q("SELECT ubigeo, departamento, fuente, nivel, pim, devengado "
              "FROM gasto_meta_fuente WHERE ano=%s", (year,))
