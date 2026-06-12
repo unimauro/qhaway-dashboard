@@ -427,15 +427,14 @@ function SerieTemporal({ serie, oficial, mensual }: {
   return (
     <Card>
       <CardHeader
-        title="Presupuesto del Sector Público — tendencia anual"
-        subtitle="PIM y devengado al cierre · Informe Global de la Gestión Presupuestaria (MEF)"
+        title="Presupuesto público — tendencia anual 2004-2026"
+        subtitle="PIM y devengado por año · MEF Consulta Amigable (por destino territorial)"
         help={
           <span>
-            Serie histórica oficial del Presupuesto del Sector Público (cifras de cierre
-            anual, MEF). Las barras son el <strong>PIM</strong> y la línea el
-            <strong> devengado</strong>. El año en curso (2025) está en ejecución y se
-            detalla en los filtros y el mapa de arriba. Cifras en <strong>soles
-            corrientes</strong> (no ajustadas por inflación).
+            Serie histórica del gasto público (22 años), extraída de la Consulta
+            Amigable del MEF por destino territorial. Las barras son el <strong>PIM</strong>
+            y la línea el <strong>devengado</strong>. Consistente con el detalle distrital
+            2025. Cifras en <strong>soles corrientes</strong> (no ajustadas por inflación).
           </span>
         }
       />

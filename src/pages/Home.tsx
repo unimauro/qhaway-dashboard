@@ -99,15 +99,16 @@ function KpisYGrafico() {
 
       <Card className="mt-4">
         <CardHeader
-          title="Presupuesto del Sector Público — tendencia anual"
-          subtitle="PIM y devengado al cierre · Informe Global de la Gestión Presupuestaria (MEF)"
+          title="Presupuesto público — tendencia anual 2004-2026"
+          subtitle="PIM y devengado por año · MEF Consulta Amigable (por destino territorial)"
           help={
             <HelpTip>
-              Serie histórica oficial del Presupuesto del Sector Público (cifras de
-              cierre de cada año, fuente MEF). Las barras son el PIM y la línea el
-              devengado (gasto ejecutado). El año en curso (2025) está en ejecución y
-              se detalla en los indicadores de arriba y en los demás módulos. No
-              compares años sin considerar inflación (montos en soles corrientes).
+              Serie histórica del gasto público (22 años) construida con el scraper de
+              la Consulta Amigable del MEF, por destino territorial. Las barras son el
+              PIM y la línea el devengado. Consistente con el detalle distrital 2025.
+              2026 está en ejecución. Años previos a 2004 y 2005 tienen vacíos de
+              atribución geográfica en la fuente. No compares años sin considerar
+              inflación (soles corrientes).
             </HelpTip>
           }
         />
