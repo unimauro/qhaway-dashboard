@@ -42,7 +42,8 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
     const ordenada = [...serie].sort((a, b) => a.year - b.year)
     const anios = ordenada.map((s) => String(s.year))
     const pims = ordenada.map((s) => s.pim)
-    const devs = ordenada.map((s) => s.devengado)
+    // Devengado=0 (años antiguos sin dato confiable en la fuente) → hueco, no barra en cero.
+    const devs = ordenada.map((s) => (s.devengado > 0 ? s.devengado : null))
     return {
       legend: { top: 0, data: ['PIM', 'Devengado'] },
       tooltip: {
@@ -52,13 +53,14 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
         formatter: (params: any[]) => {
           const idx = params[0]?.dataIndex ?? 0
           const s = ordenada[idx]
+          const tieneDev = s.devengado > 0
           const frac = ejecucion(s.devengado, s.pim)
           return [
             `<b>${s.year}</b>`,
             `PIM: ${soles(s.pim)}`,
-            `Devengado: ${soles(s.devengado)}`,
-            `Ejecución: <b>${pct(frac)}</b>`,
-          ].join('<br/>')
+            tieneDev ? `Devengado: ${soles(s.devengado)}` : 'Devengado: s/d',
+            tieneDev ? `Ejecución: <b>${pct(frac)}</b>` : '',
+          ].filter(Boolean).join('<br/>')
         },
       },
       xAxis: { type: 'category', data: anios },
