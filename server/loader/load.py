@@ -63,13 +63,31 @@ def download(year):
         expected = 0
     print(f"[{year}] descargando ({expected/1e9:.1f} GB)…", flush=True)
     t0 = time.time()
-    for _ in range(80):
+    # Descarga CONTINUA: sin --max-time (no cortamos cada 5 min). curl corre hasta
+    # terminar; --speed-limit/--speed-time lo aborta SOLO si se estanca <25 KB/s por 120s.
+    # Así el caso feliz baja el archivo entero en una sola conexión y NUNCA reanuda
+    # (con varias conexiones el MEF a veces ignora Range y responde 200 → curl trunca;
+    # al no reanudar, evitamos ese thrashing). Si 3 ciclos no avanzan, reinicia limpio.
+    stalls = 0
+    for _ in range(40):
         have = os.path.getsize(path) if os.path.exists(path) else 0
-        if expected and have >= expected:
+        if expected and have >= expected * 0.98:
             break
-        subprocess.run(["curl", "-s", "-C", "-", "--max-time", "300", "--retry", "5", "-A", UA, url, "-o", path])
-        if (os.path.getsize(path) if os.path.exists(path) else 0) == have:
-            time.sleep(4)
+        subprocess.run(["curl", "-s", "-C", "-", "--retry", "8", "--retry-delay", "15",
+                        "--retry-all-errors", "--speed-limit", "25000", "--speed-time", "120",
+                        "-A", UA, url, "-o", path])
+        now = os.path.getsize(path) if os.path.exists(path) else 0
+        if now <= have:
+            stalls += 1
+            if stalls >= 3:  # 3 ciclos sin avanzar (resume roto) → empieza de cero una vez
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                stalls = 0
+            time.sleep(8)
+        else:
+            stalls = 0
     ok = os.path.exists(path) and (not expected or os.path.getsize(path) >= expected * 0.98)
     print(f"  {year}: {'OK' if ok else 'INCOMPLETO'} {os.path.getsize(path)/1e9:.1f} GB en {time.time()-t0:.0f}s", flush=True)
     return path if ok else None
