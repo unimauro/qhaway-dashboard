@@ -1,0 +1,53 @@
+# QHAWAY API — stack aislado para el VPS compartido (no toca recuperamas/contodo).
+# Postgres solo en red interna; API en 127.0.0.1:8000 (HestiaCP hace el proxy + SSL a qhaway.tunky.net).
+services:
+  qhaway-db:
+    image: postgres:16-alpine
+    container_name: qhaway-db
+    environment:
+      POSTGRES_DB: qhaway
+      POSTGRES_USER: qhaway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qhaway_local}
+    volumes:
+      - qhaway_pgdata:/var/lib/postgresql/data
+    # Config conservadora: VPS compartido de 8 GB. Datos agregados = poca RAM.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - max_connections=40
+    restart: unless-stopped
+    networks: [qhaway]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qhaway -d qhaway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qhaway-api:
+    build: ./api
+    container_name: qhaway-api
+    environment:
+      DATABASE_URL: postgresql://qhaway:${POSTGRES_PASSWORD:-qhaway_local}@qhaway-db:5432/qhaway
+      # Orígenes permitidos (CORS). El dashboard de GitHub Pages + dev local.
+      CORS_ORIGINS: "https://unimauro.github.io,http://localhost:5173,https://qhaway.tunky.net"
+      QHAWAY_API_KEY: ${QHAWAY_API_KEY:-}
+      RATE_MAX: "120"
+      RATE_WINDOW: "60"
+    ports:
+      - "127.0.0.1:8000:8000"   # solo localhost; HestiaCP proxya a qhaway.tunky.net
+    depends_on:
+      qhaway-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [qhaway]
+
+volumes:
+  qhaway_pgdata:
+
+networks:
+  qhaway:
+    name: qhaway_net
