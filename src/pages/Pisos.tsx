@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useAsync } from '../lib/useAsync'
 import {
   getGeoJSON,
@@ -15,13 +15,14 @@ import {
   HelpTip,
   KPI,
   Pill,
+  Select,
   Loading,
   ErrorBox,
   SectionIntro,
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
-import { soles, solesCompact, num, pct, ejecucion } from '../lib/format'
+import { soles, solesCompact, num, pct } from '../lib/format'
 
 interface PisoFeature {
   IDDIST: string
@@ -39,8 +40,12 @@ interface FilaPiso {
   conPresupuesto: number
 }
 
-const colorEjecucion = (frac: number): string =>
-  frac < 0.5 ? '#ef4444' : frac < 0.8 ? '#f59e0b' : '#22c55e'
+// Poblaciones base de referencia para el per cápita legible.
+const BASES_POBLACION: { value: number; label: string }[] = [
+  { value: 1000, label: 'por cada 1,000 habitantes' },
+  { value: 10000, label: 'por cada 10,000 habitantes' },
+  { value: 100000, label: 'por cada 100,000 habitantes' },
+]
 
 export default function Pisos() {
   const geoRes = useAsync<unknown>(() => getGeoJSON(), [])
@@ -56,6 +61,9 @@ export default function Pisos() {
     () => (latestYear ? getPorDistrito(latestYear) : Promise.resolve([])),
     [latestYear],
   )
+
+  // Población base elegida por el usuario (escala del per cápita legible).
+  const [base, setBase] = useState<number>(10000)
 
   // --- Mapas auxiliares por ubigeo6 ---
   const altPorUbigeo = useMemo(() => {
@@ -77,6 +85,8 @@ export default function Pisos() {
   }, [distRes.data])
 
   // --- Clasificar cada distrito del geojson a su piso (join por IDDIST) ---
+  // La altitud preferente es la de indicadores-distrito (reales por ubigeo);
+  // fallback a la capa de altitudes.
   const pisoPorUbigeo = useMemo(() => {
     const m = new Map<string, Piso>()
     const geo = geoRes.data as { features?: { properties?: PisoFeature }[] } | undefined
@@ -84,8 +94,7 @@ export default function Pisos() {
     for (const f of geo.features) {
       const p = f.properties
       if (!p?.IDDIST) continue
-      // altitud preferente: capa altitudes; fallback indicadores
-      const alt = altPorUbigeo.get(p.IDDIST) ?? indPorUbigeo.get(p.IDDIST)?.altitud
+      const alt = indPorUbigeo.get(p.IDDIST)?.altitud ?? altPorUbigeo.get(p.IDDIST)
       const piso = clasificarPiso(alt, p.NOMBDEP ?? '')
       if (piso) m.set(p.IDDIST, piso)
     }
@@ -102,7 +111,7 @@ export default function Pisos() {
       if (!ubi) continue
       const piso = pisoPorUbigeo.get(ubi)
       if (!piso) continue
-      const alt = altPorUbigeo.get(ubi) ?? indPorUbigeo.get(ubi)?.altitud
+      const alt = indPorUbigeo.get(ubi)?.altitud ?? altPorUbigeo.get(ubi)
       const altTxt = alt !== undefined ? `${num(alt)} msnm` : 's/d'
       m.set(ubi, {
         value: TODOS_PISOS.findIndex((p) => p.id === piso.id),
@@ -115,9 +124,9 @@ export default function Pisos() {
 
   // --- Agregado presupuestal + distritos + población por piso ---
   const filas = useMemo<FilaPiso[]>(() => {
-    const base = new Map<string, FilaPiso>()
+    const baseMap = new Map<string, FilaPiso>()
     for (const p of TODOS_PISOS) {
-      base.set(p.id, {
+      baseMap.set(p.id, {
         piso: p,
         nDistritos: 0,
         pob: 0,
@@ -128,7 +137,7 @@ export default function Pisos() {
       })
     }
     for (const [ubi, piso] of pisoPorUbigeo) {
-      const fila = base.get(piso.id)
+      const fila = baseMap.get(piso.id)
       if (!fila) continue
       fila.nDistritos += 1
       const ind = indPorUbigeo.get(ubi)
@@ -144,44 +153,107 @@ export default function Pisos() {
       }
     }
     // Orden costa→cordillera→selva (orden de TODOS_PISOS)
-    return TODOS_PISOS.map((p) => base.get(p.id)!).filter((f) => f.nDistritos > 0)
+    return TODOS_PISOS.map((p) => baseMap.get(p.id)!).filter((f) => f.nDistritos > 0)
   }, [pisoPorUbigeo, indPorUbigeo, distPorUbigeo])
 
-  const hayPresupuesto = useMemo(
-    () => filas.some((f) => f.pim > 0),
-    [filas],
-  )
+  const hayPresupuesto = useMemo(() => filas.some((f) => f.pim > 0), [filas])
+  const hayPoblacion = useMemo(() => filas.some((f) => f.tienePob && f.pob > 0), [filas])
 
   const pimTotal = useMemo(() => filas.reduce((s, f) => s + f.pim, 0), [filas])
+  const pobTotal = useMemo(() => filas.reduce((s, f) => s + f.pob, 0), [filas])
 
-  // KPIs altoandino (Puna+Janca) y selva (Alta+Baja)
+  // KPIs altoandino (Puna+Janca), costa (Chala), selva (Alta+Baja) — per cápita.
   const kpi = useMemo(() => {
-    const sum = (ids: string[]) =>
-      filas
-        .filter((f) => ids.includes(f.piso.id))
-        .reduce((s, f) => s + f.pim, 0)
-    const altoandino = sum(['puna', 'janca'])
-    const selva = sum(['selva_alta', 'selva_baja'])
-    return { altoandino, selva }
+    const agreg = (ids: string[]) => {
+      const fs = filas.filter((f) => ids.includes(f.piso.id))
+      const pim = fs.reduce((s, f) => s + f.pim, 0)
+      const pob = fs.reduce((s, f) => s + f.pob, 0)
+      return { pim, pob, perCapita: pob > 0 ? pim / pob : null }
+    }
+    return {
+      altoandino: agreg(['puna', 'janca']),
+      costa: agreg(['chala']),
+      selva: agreg(['selva_alta', 'selva_baja']),
+    }
   }, [filas])
 
-  // --- Estados de carga / error (bloqueantes: geojson + altitudes) ---
-  if (geoRes.loading || altRes.loading || metaRes.loading) return <Loading label="Cargando pisos altitudinales…" />
+  // --- Estados de carga / error (bloqueantes: geojson + meta) ---
+  if (geoRes.loading || metaRes.loading || (altRes.loading && indRes.loading))
+    return <Loading label="Cargando pisos altitudinales…" />
   if (geoRes.error) return <ErrorBox error={geoRes.error} />
-  if (altRes.error) return <ErrorBox error={altRes.error} />
   if (metaRes.error) return <ErrorBox error={metaRes.error} />
-  if (!geoRes.data || !altRes.data || !metaRes.data) return <Loading />
+  if (!geoRes.data || !metaRes.data) return <Loading />
   if (pisoPorUbigeo.size === 0)
-    return <ErrorBox error="No se pudo clasificar ningún distrito por piso altitudinal (sin datos de altitud)." />
+    return (
+      <ErrorBox error="No se pudo clasificar ningún distrito por piso altitudinal (sin datos de altitud)." />
+    )
 
-  // --- Opciones ECharts ---
-  const optBarrasPresupuesto = {
-    grid: { left: 8, right: 16, bottom: 8, top: 16, containLabel: true },
+  const baseLabel = BASES_POBLACION.find((b) => b.value === base)?.label ?? ''
+
+  // PIM por cada N habitantes (escala legible elegida por el usuario).
+  const pimPorBase = (f: FilaPiso): number | null =>
+    f.tienePob && f.pob > 0 ? (f.pim / f.pob) * base : null
+
+  // ---------- Opciones ECharts ----------
+
+  // GRÁFICO DE EQUIDAD (clave): % población vs % presupuesto por piso.
+  const optEquidad = {
+    grid: { left: 8, right: 16, bottom: 8, top: 36, containLabel: true },
+    legend: { top: 4, data: ['% Población', '% Presupuesto (PIM)'] },
+    tooltip: {
+      trigger: 'axis' as const,
+      formatter: (params: { name: string; seriesName: string; value: number }[]) => {
+        const head = params[0]?.name ?? ''
+        const body = params
+          .map((p) => `${p.seriesName}: ${p.value.toFixed(1)}%`)
+          .join('<br/>')
+        return `${head}<br/>${body}`
+      },
+    },
+    xAxis: {
+      type: 'category' as const,
+      data: filas.map((f) => f.piso.nombre),
+      axisLabel: { interval: 0, rotate: 28, fontSize: 10 },
+    },
+    yAxis: {
+      type: 'value' as const,
+      axisLabel: { formatter: (v: number) => `${v}%` },
+    },
+    series: [
+      {
+        name: '% Población',
+        type: 'bar' as const,
+        barGap: '10%',
+        data: filas.map((f) => ({
+          value: pobTotal > 0 ? (f.pob / pobTotal) * 100 : 0,
+          itemStyle: { color: '#64748b' },
+        })),
+        barMaxWidth: 26,
+      },
+      {
+        name: '% Presupuesto (PIM)',
+        type: 'bar' as const,
+        data: filas.map((f) => ({
+          value: pimTotal > 0 ? (f.pim / pimTotal) * 100 : 0,
+          itemStyle: { color: f.piso.color },
+        })),
+        barMaxWidth: 26,
+      },
+    ],
+  }
+
+  // Barras de PIM per cápita por piso, ordenadas, color por piso.
+  const filasPerCapita = [...filas]
+    .filter((f) => f.tienePob && f.pob > 0 && f.pim > 0)
+    .sort((a, b) => b.pim / b.pob - a.pim / a.pob)
+
+  const optPerCapita = {
+    grid: { left: 8, right: 24, bottom: 8, top: 16, containLabel: true },
     tooltip: {
       trigger: 'axis' as const,
       formatter: (params: { name: string; value: number }[]) => {
         const p = params[0]
-        return `${p.name}<br/>PIM: ${soles(p.value)}`
+        return `${p.name}<br/>PIM ${baseLabel}: ${soles(p.value)}`
       },
     },
     xAxis: {
@@ -190,14 +262,14 @@ export default function Pisos() {
     },
     yAxis: {
       type: 'category' as const,
-      data: filas.map((f) => f.piso.nombre),
+      data: filasPerCapita.map((f) => f.piso.nombre),
       inverse: true,
     },
     series: [
       {
         type: 'bar' as const,
-        data: filas.map((f) => ({
-          value: f.pim,
+        data: filasPerCapita.map((f) => ({
+          value: (f.pim / f.pob) * base,
           itemStyle: { color: f.piso.color },
         })),
         barMaxWidth: 28,
@@ -205,13 +277,16 @@ export default function Pisos() {
     ],
   }
 
-  const optDistritos = {
-    grid: { left: 8, right: 16, bottom: 8, top: 16, containLabel: true },
+  // Distribución de población por piso (si hay) o de distritos.
+  const optDistribucion = {
+    grid: { left: 8, right: 24, bottom: 8, top: 16, containLabel: true },
     tooltip: {
       trigger: 'axis' as const,
       formatter: (params: { name: string; value: number }[]) => {
         const p = params[0]
-        return `${p.name}<br/>${num(p.value)} distritos`
+        return hayPoblacion
+          ? `${p.name}<br/>${num(p.value)} habitantes`
+          : `${p.name}<br/>${num(p.value)} distritos`
       },
     },
     xAxis: {
@@ -227,7 +302,7 @@ export default function Pisos() {
       {
         type: 'bar' as const,
         data: filas.map((f) => ({
-          value: f.nDistritos,
+          value: hayPoblacion ? f.pob : f.nDistritos,
           itemStyle: { color: f.piso.color },
         })),
         barMaxWidth: 28,
@@ -242,38 +317,64 @@ export default function Pisos() {
 
   return (
     <div className="space-y-5">
-      <SectionIntro title="Inteligencia territorial · Pisos altitudinales">
+      <SectionIntro title="Inteligencia territorial · Equidad presupuesto–población por piso">
         El Perú no es un país plano: su territorio se organiza en{' '}
         <strong>regiones naturales según la altitud</strong>. Aquí cruzamos esa geografía
-        con el presupuesto público para responder una pregunta que casi nadie hace:{' '}
-        <em>¿cuánto presupuesto llega a cada piso altitudinal?</em>
+        con la población real y el presupuesto público para responder una pregunta de
+        equidad que casi nadie hace:{' '}
+        <em>¿cada piso altitudinal recibe presupuesto en proporción a la gente que vive en él?</em>
       </SectionIntro>
 
-      {/* 1. Metodología honesta */}
+      {/* 1. Metodología explícita + selector de población base */}
       <Card>
         <CardHeader
-          title="Cómo clasificamos (y sus límites)"
-          subtitle="Javier Pulgar Vidal · 8 regiones naturales"
+          title="Metodología: cómo clasificamos y cómo leemos el per cápita"
+          subtitle="Javier Pulgar Vidal · 8 regiones naturales · enfoque poblacional"
           right={<Pill tone="warn">aprox.</Pill>}
+          help={
+            <HelpTip>
+              «Población base» solo cambia la escala de lectura del per cápita: el orden y
+              las proporciones entre pisos no cambian, pero las cifras se vuelven legibles
+              (S/ por cada 1,000 / 10,000 / 100,000 habitantes).
+            </HelpTip>
+          }
         />
         <div className="text-sm text-zinc-600 dark:text-zinc-300 space-y-2 px-1">
           <p>
-            Usamos la clasificación clásica de{' '}
-            <strong>Javier Pulgar Vidal</strong> («Las ocho regiones naturales del Perú»,
-            1941): Chala, Yunga, Quechua, Suni, Puna, Janca, más Selva Alta y Selva Baja.
+            Usamos la clasificación clásica de <strong>Javier Pulgar Vidal</strong> («Las
+            ocho regiones naturales del Perú», 1941): Chala, Yunga, Quechua, Suni, Puna,
+            Janca, más Selva Alta y Selva Baja.
           </p>
           <p>
             <Pill tone="warn">MVP</Pill> A cada distrito le asignamos su{' '}
             <strong>piso DOMINANTE según la altitud de su capital</strong>, no la
             composición porcentual real por modelo de elevación (DEM). Un distrito
-            altoandino con valles bajos puede tener varios pisos a la vez; eso lo
-            resolveremos en el roadmap con análisis por DEM. La frontera amazónica
-            (Selva Alta/Baja) se discrimina además por departamento.
+            altoandino con valles bajos puede tener varios pisos a la vez; la composición %
+            real por DEM va en el roadmap. La frontera amazónica (Selva Alta/Baja) se
+            discrimina además por departamento.
           </p>
+          <p>
+            <strong>Enfoque poblacional:</strong> sumamos la población real por distrito
+            (INEI, vía indicadores distritales) y la comparamos con el PIM. Para que el per
+            cápita sea legible, elige una <strong>población base de referencia</strong> y
+            expresamos el presupuesto como <strong>S/ {baseLabel}</strong>.
+          </p>
+          <div className="pt-1">
+            <Select
+              label="Población base:"
+              value={base}
+              onChange={setBase}
+              options={BASES_POBLACION.map((b) => ({
+                value: b.value,
+                label: b.label.replace('por cada ', ''),
+              }))}
+            />
+          </div>
           <p className="text-xs text-zinc-500">
-            Fuente de altitud: capa oficial de altitudes distritales (SIAF-MEF / INEI).
-            La clasificación piso↔distrito es una <strong>aproximación metodológica</strong>,
-            no un dato oficial cerrado.
+            Fuentes: altitud y población distritales (INEI / SIAF-MEF). La clasificación
+            piso↔distrito es una <strong>aproximación metodológica comparativa</strong>, no
+            un dato oficial cerrado. Las cifras per cápita sirven para comparar pisos entre
+            sí, no como gasto exacto por persona.
           </p>
         </div>
       </Card>
@@ -319,74 +420,77 @@ export default function Pisos() {
 
       {hayPresupuesto ? (
         <>
-          {/* 4. KPIs destacados */}
+          {/* 4. KPIs de equidad per cápita */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <KPI
-              label={`PIM altoandino (Puna + Janca) ${latestYear ?? ''}`}
-              value={solesCompact(kpi.altoandino)}
+              label={`PIM per cápita altoandino (Puna + Janca) · ${baseLabel}`}
+              value={kpi.altoandino.perCapita !== null ? soles(kpi.altoandino.perCapita * base) : 's/d'}
               sub={
-                pimTotal > 0
-                  ? `${pct(kpi.altoandino / pimTotal)} del total clasificado`
-                  : undefined
+                kpi.costa.perCapita !== null && kpi.altoandino.perCapita !== null
+                  ? `${(kpi.altoandino.perCapita / kpi.costa.perCapita).toFixed(2)}× vs costa (Chala)`
+                  : `Año ${latestYear ?? ''}`
               }
               accent
             />
             <KPI
-              label={`PIM Selva (Alta + Baja) ${latestYear ?? ''}`}
-              value={solesCompact(kpi.selva)}
-              sub={
-                pimTotal > 0
-                  ? `${pct(kpi.selva / pimTotal)} del total clasificado`
-                  : undefined
-              }
+              label={`PIM per cápita costa (Chala) · ${baseLabel}`}
+              value={kpi.costa.perCapita !== null ? soles(kpi.costa.perCapita * base) : 's/d'}
+              sub={`Año ${latestYear ?? ''}`}
             />
             <KPI
-              label="PIM total clasificado por piso"
-              value={solesCompact(pimTotal)}
-              sub={`${num(filas.reduce((s, f) => s + f.conPresupuesto, 0))} distritos con presupuesto`}
+              label={`PIM per cápita amazónico (Selva Alta + Baja) · ${baseLabel}`}
+              value={kpi.selva.perCapita !== null ? soles(kpi.selva.perCapita * base) : 's/d'}
+              sub={`Año ${latestYear ?? ''}`}
             />
           </div>
           <Card>
             <div className="text-sm text-zinc-600 dark:text-zinc-300 space-y-2 px-1">
               <p>
-                <Pill tone="warn">lectura honesta</Pill> Estas cifras{' '}
-                <strong>no son “gasto por geografía pura”</strong>: un PIM alto en un piso
-                puede reflejar dónde vive más gente o dónde hay grandes obras, no
-                necesariamente equidad territorial. Para juzgar equidad mira el{' '}
-                <strong>PIM per cápita</strong> de la tabla siguiente, no el monto absoluto.
+                <Pill tone="warn">lectura honesta</Pill> El per cápita altoandino suele ser{' '}
+                <strong>mayor</strong> que el de la costa, pero eso{' '}
+                <strong>no significa «privilegio»</strong>: en la puna hay pocos habitantes
+                muy dispersos, por lo que prestar el mismo servicio cuesta más por persona.
+                Un per cápita alto puede reflejar costo de provisión, no abundancia. Y un
+                per cápita bajo en un piso muy poblado no implica necesariamente injusticia.
+                Lee estas cifras como <strong>comparativas y aproximadas</strong>, no como
+                un veredicto oficial de equidad.
               </p>
             </div>
           </Card>
 
-          {/* 3a. Barras de presupuesto por piso */}
+          {/* 3. GRÁFICO DE EQUIDAD (clave) */}
           <Card>
             <CardHeader
-              title="¿Cuánto presupuesto recibe cada piso altitudinal?"
-              subtitle={`PIM ${latestYear ?? ''} agregado por piso`}
+              title="Equidad: % de población vs % de presupuesto por piso"
+              subtitle={`Población (INEI) vs PIM ${latestYear ?? ''}`}
+              right={<Pill tone="warn">comparativo</Pill>}
               help={
                 <HelpTip>
-                  Sumamos el PIM de todos los distritos de cada piso. La barra mide soles
-                  totales: los pisos donde vive más gente (Chala, Quechua) tienden a recibir
-                  más en términos absolutos. Para comparar justicia distributiva usa la
-                  columna PIM per cápita de la tabla.
+                  Por cada piso comparamos dos barras: la gris es el % de la población
+                  nacional clasificada que vive en ese piso; la de color es el % del PIM
+                  nacional clasificado que recibe.{' '}
+                  <strong>Si la barra de presupuesto es MENOR que la de población</strong>,
+                  ese piso está subfinanciado per cápita (recibe proporcionalmente menos
+                  dinero que gente tiene). Si es mayor, recibe proporcionalmente más. No mide
+                  eficiencia ni necesidad, solo proporción.
                 </HelpTip>
               }
             />
-            <Chart option={optBarrasPresupuesto} height={Math.max(220, filas.length * 44)} />
+            <Chart option={optEquidad} height={Math.max(280, filas.length * 38)} />
           </Card>
 
-          {/* 3b. Tabla detallada */}
+          {/* 2b. Tabla por piso (cruce completo con enfoque poblacional) */}
           <Card>
             <CardHeader
-              title="Presupuesto por piso: el cruce completo"
+              title="Presupuesto y población por piso: el cruce completo"
               subtitle={`Año ${latestYear ?? ''}`}
               right={<Pill tone="warn">piso por altitud de capital</Pill>}
               help={
                 <HelpTip>
-                  Cruzamos pisos altitudinales (geografía) con SIAF (presupuesto) y INEI
-                  (población). % ejecución = devengado / PIM (rojo &lt;50%, ámbar 50–80%,
-                  verde &gt;80%). PIM per cápita = PIM ÷ población; donde no hay población
-                  oficial cargada, la celda muestra «s/d».
+                  Cruzamos pisos (geografía), población (INEI) y PIM (SIAF). «% pob.» y «%
+                  PIM» son la cuota de cada piso sobre el total clasificado. «PIM per cápita»
+                  = PIM ÷ población; «PIM {baseLabel}» reescala ese per cápita a la población
+                  base elegida. Donde no hay población, la celda muestra «s/d».
                 </HelpTip>
               }
             />
@@ -397,16 +501,22 @@ export default function Pisos() {
                     <th className="py-2 pr-3">Piso</th>
                     <th className="py-2 px-3 text-right">Distritos</th>
                     <th className="py-2 px-3 text-right">Población</th>
+                    <th className="py-2 px-3 text-right">% pob.</th>
                     <th className="py-2 px-3 text-right">PIM</th>
-                    <th className="py-2 px-3 text-right">Devengado</th>
-                    <th className="py-2 px-3 text-right">% Ejec.</th>
-                    <th className="py-2 pl-3 text-right">PIM per cápita</th>
+                    <th className="py-2 px-3 text-right">% PIM</th>
+                    <th className="py-2 px-3 text-right">PIM per cápita</th>
+                    <th className="py-2 pl-3 text-right">PIM {baseLabel}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filas.map((f) => {
-                    const frac = ejecucion(f.devengado, f.pim)
                     const perCapita = f.tienePob && f.pob > 0 ? f.pim / f.pob : null
+                    const pctPob = pobTotal > 0 ? f.pob / pobTotal : null
+                    const pctPim = pimTotal > 0 ? f.pim / pimTotal : null
+                    const escala = pimPorBase(f)
+                    // Señal de equidad: PIM% por debajo de Pob% => subfinanciado per cápita.
+                    const subfinanciado =
+                      pctPob !== null && pctPim !== null && f.pob > 0 && pctPim < pctPob
                     return (
                       <tr
                         key={f.piso.id}
@@ -427,23 +537,32 @@ export default function Pisos() {
                         <td className="py-2 px-3 text-right tabular-nums">
                           {f.tienePob ? num(f.pob) : <span className="text-zinc-400">s/d</span>}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums">{solesCompact(f.pim)}</td>
-                        <td className="py-2 px-3 text-right tabular-nums">{solesCompact(f.devengado)}</td>
                         <td className="py-2 px-3 text-right tabular-nums">
-                          {f.pim > 0 ? (
-                            <span style={{ color: colorEjecucion(frac) }} className="font-medium">
-                              {pct(frac)}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-400">—</span>
-                          )}
+                          {pctPob !== null ? pct(pctPob) : <span className="text-zinc-400">s/d</span>}
                         </td>
-                        <td className="py-2 pl-3 text-right tabular-nums">
-                          {perCapita !== null ? (
-                            soles(perCapita)
+                        <td className="py-2 px-3 text-right tabular-nums">{solesCompact(f.pim)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums">
+                          {pctPim !== null ? (
+                            <span
+                              className="font-medium"
+                              style={{ color: subfinanciado ? '#f59e0b' : undefined }}
+                              title={
+                                subfinanciado
+                                  ? 'PIM% por debajo de Población% (subfinanciado per cápita)'
+                                  : undefined
+                              }
+                            >
+                              {pct(pctPim)}
+                            </span>
                           ) : (
                             <span className="text-zinc-400">s/d</span>
                           )}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums">
+                          {perCapita !== null ? soles(perCapita) : <span className="text-zinc-400">s/d</span>}
+                        </td>
+                        <td className="py-2 pl-3 text-right tabular-nums">
+                          {escala !== null ? soles(escala) : <span className="text-zinc-400">s/d</span>}
                         </td>
                       </tr>
                     )
@@ -455,49 +574,79 @@ export default function Pisos() {
                     <td className="py-2 px-3 text-right tabular-nums">
                       {num(filas.reduce((s, f) => s + f.nDistritos, 0))}
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums">
-                      {num(filas.reduce((s, f) => s + f.pob, 0))}
-                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums">{num(pobTotal)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{pobTotal > 0 ? '100%' : ''}</td>
                     <td className="py-2 px-3 text-right tabular-nums">{solesCompact(pimTotal)}</td>
+                    <td className="py-2 px-3 text-right tabular-nums">{pimTotal > 0 ? '100%' : ''}</td>
                     <td className="py-2 px-3 text-right tabular-nums">
-                      {solesCompact(filas.reduce((s, f) => s + f.devengado, 0))}
+                      {pobTotal > 0 ? soles(pimTotal / pobTotal) : ''}
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums" />
-                    <td className="py-2 pl-3 text-right tabular-nums" />
+                    <td className="py-2 pl-3 text-right tabular-nums">
+                      {pobTotal > 0 ? soles((pimTotal / pobTotal) * base) : ''}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
+            <p className="mt-2 px-1 text-xs text-zinc-500">
+              El número en{' '}
+              <span className="font-medium text-amber-600 dark:text-amber-400">ámbar</span> en «%
+              PIM» marca pisos cuyo porcentaje de presupuesto es menor que su porcentaje de
+              población (señal de posible subfinanciamiento per cápita).
+            </p>
           </Card>
+
+          {/* 5. Barras de PIM per cápita por piso (ordenadas) */}
+          {filasPerCapita.length > 0 && (
+            <Card>
+              <CardHeader
+                title={`PIM per cápita por piso · ${baseLabel}`}
+                subtitle="Ordenado de mayor a menor"
+                help={
+                  <HelpTip>
+                    PIM ÷ población, reescalado a la población base elegida. Pisos con poca
+                    gente muy dispersa (puna, janca) tienden a un per cápita alto porque el
+                    costo de servir a cada persona es mayor; no lo leas como «más privilegio».
+                    Compara entre pisos, no como gasto exacto por persona.
+                  </HelpTip>
+                }
+              />
+              <Chart option={optPerCapita} height={Math.max(220, filasPerCapita.length * 44)} />
+            </Card>
+          )}
         </>
       ) : (
         <Card>
           <CardHeader
             title="Presupuesto por piso"
-            right={<Pill tone="warn">sin datos de presupuesto distrital</Pill>}
+            right={<Pill tone="warn">datos de presupuesto distrital en proceso</Pill>}
           />
           <div className="text-sm text-zinc-600 dark:text-zinc-300 px-1">
             {distRes.loading
               ? 'Cargando presupuesto distrital…'
-              : 'Aún no hay presupuesto distrital cargado para el último año. Se muestra el mapa de pisos y la distribución de distritos.'}
+              : 'Aún no hay presupuesto distrital cargado para el último año (los datos de presupuesto distrital están en proceso). Mientras tanto se muestran el mapa de pisos, la población por piso y la distribución de distritos. El análisis de equidad presupuesto–población aparecerá cuando el archivo por-distrito esté disponible.'}
           </div>
         </Card>
       )}
 
-      {/* 5. Distribución de distritos por piso */}
+      {/* 6. Distribución de población (o distritos) por piso */}
       <Card>
         <CardHeader
-          title="¿Cuántos distritos hay en cada piso?"
-          subtitle="Distribución del territorio por región natural"
+          title={hayPoblacion ? '¿Cuánta gente vive en cada piso?' : '¿Cuántos distritos hay en cada piso?'}
+          subtitle={
+            hayPoblacion
+              ? 'Población clasificada por región natural (INEI)'
+              : 'Distribución del territorio por región natural'
+          }
           help={
             <HelpTip>
-              Número de distritos clasificados en cada piso (no es población ni área).
-              Muestra dónde se concentra la división política del país a lo largo de la
-              gradiente altitudinal. La etiqueta a la derecha de cada barra es el conteo.
+              {hayPoblacion
+                ? 'Población total clasificada en cada piso. La costa (Chala) concentra la mayor parte de la población; la puna y la janca, muy poca. Esta concentración es clave para leer el per cápita: pocos habitantes elevan el costo por persona.'
+                : 'Número de distritos clasificados en cada piso (no es población ni área). Muestra dónde se concentra la división política del país a lo largo de la gradiente altitudinal. La etiqueta a la derecha es el conteo.'}
             </HelpTip>
           }
         />
-        <Chart option={optDistritos} height={Math.max(220, filas.length * 44)} />
+        <Chart option={optDistribucion} height={Math.max(220, filas.length * 44)} />
       </Card>
     </div>
   )

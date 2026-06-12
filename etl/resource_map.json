@@ -1,5 +1,3 @@
 {
- "2020": {"id": "64b41d99-676d-4206-b368-04de62db20d0", "devcol": "TOTAL_DEVENGADO", "rows": 22010, "hasGirado": false},
- "2024": {"id": "42477a87-ee45-4df2-9c6f-ccd63c2b1411", "devcol": "TOTAL_DEVENGADO", "rows": 204495, "hasGirado": false},
  "2025": {"id": "77fc3228-fa6f-4c1f-a0ed-d32520ad11ad", "devcol": "MONTO_DEVENGADO", "rows": 11438616, "hasGirado": true}
 }

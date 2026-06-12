@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
 import {
   getMeta, getSerieNacional, getPorNivel, getPorDepartamento,
-  getPorDistrito, getPorFuncion, getPorSector, getFlujoFases, getGeoJSON,
+  getPorDistrito, getPorFuncion, getPorSector, getFlujoFases, getGeoJSON, loadJSON,
 } from '../lib/data'
 import type {
   Meta, SerieNacional, PorNivel, PorDepartamento, PorDistrito,
@@ -15,6 +15,7 @@ import {
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
 type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
@@ -87,6 +88,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
 
   // Fuentes que NO dependen del año
   const serie = useAsync<SerieNacional[]>(getSerieNacional, [])
+  const mensual = useAsync<PuntoMensual[]>(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
   const niveles = useAsync<PorNivel[]>(getPorNivel, [])
   const geo = useAsync<unknown>(getGeoJSON, [])
 
@@ -166,7 +168,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
 
       {/* 3 y 4 en grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <SerieTemporal serie={serie} />
+        <SerieTemporal serie={serie} mensual={mensual} />
         <SankeyFases flujo={flujo} year={year} />
       </div>
 
@@ -414,55 +416,31 @@ function DetalleBox({ d, fase }: { d: { titulo: string; sub?: string; pim: numbe
 
 /* ───────────────────────── 3. Serie temporal ───────────────────────── */
 
-function SerieTemporal({ serie }: { serie: ReturnType<typeof useAsync<SerieNacional[]>> }) {
+function SerieTemporal({ serie, mensual }: {
+  serie: ReturnType<typeof useAsync<SerieNacional[]>>
+  mensual: ReturnType<typeof useAsync<PuntoMensual[]>>
+}) {
   return (
     <Card>
       <CardHeader
-        title="Serie temporal nacional"
-        subtitle="PIA, PIM y devengado por año"
+        title="Presupuesto y ejecución nacional"
+        subtitle="PIA, PIM, devengado y girado · evolución por mes/trimestre/semestre/año"
         help={
           <span>
-            Las barras comparan <strong>PIA</strong> (inicial) y <strong>PIM</strong> (vigente);
-            la línea es el <strong>devengado</strong> (gasto real). Cifras en <strong>soles
-            corrientes</strong> (no ajustadas por inflación), así que el crecimiento incluye el
-            efecto de los precios.
+            Con un año, las barras muestran cada fase del gasto y, si hay datos
+            mensuales, la <strong>evolución del devengado</strong> dentro del año
+            (con el PIM de referencia). Con varios años verás la tendencia. Cifras en
+            <strong> soles corrientes</strong> (no ajustadas por inflación).
           </span>
         }
       />
       <div className="px-4 pb-4">
         {serie.loading ? <Loading /> : serie.error ? <ErrorBox error={serie.error} /> : !serie.data ? <Loading /> : (
-          <SerieChart data={serie.data} />
+          <SerieChartShared serie={serie.data} mensual={mensual.data ?? undefined} height={320} />
         )}
       </div>
     </Card>
   )
-}
-
-function SerieChart({ data }: { data: SerieNacional[] }) {
-  const rows = [...data].sort((a, b) => a.year - b.year)
-  const years = rows.map((r) => String(r.year))
-  const option: EChartsOption = {
-    legend: { top: 0, textStyle: { fontSize: 11 } },
-    tooltip: {
-      trigger: 'axis',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      formatter: (ps: any) => {
-        const arr = Array.isArray(ps) ? ps : [ps]
-        const head = `<b>${arr[0]?.axisValue ?? ''}</b>`
-        const body = arr.map((p) => `${p.marker} ${p.seriesName}: <b>${solesCompact(p.value as number)}</b>`).join('<br>')
-        return `${head}<br>${body}`
-      },
-    },
-    grid: { left: 8, right: 16, top: 34, bottom: 8, containLabel: true },
-    xAxis: { type: 'category', data: years, axisLabel: { fontSize: 11 } },
-    yAxis: { type: 'value', axisLabel: { formatter: (v: number) => solesCompact(v), fontSize: 10 } },
-    series: [
-      { name: 'PIA', type: 'bar', data: rows.map((r) => r.pia), barGap: 0, itemStyle: { borderRadius: [3, 3, 0, 0] } },
-      { name: 'PIM', type: 'bar', data: rows.map((r) => r.pim), itemStyle: { borderRadius: [3, 3, 0, 0] } },
-      { name: 'Devengado', type: 'line', data: rows.map((r) => r.devengado), smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 3 } },
-    ],
-  }
-  return <Chart option={option} height={300} />
 }
 
 /* ───────────────────────── 4. Sankey de fases ───────────────────────── */

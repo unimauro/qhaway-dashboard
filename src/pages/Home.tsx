@@ -1,14 +1,14 @@
 import { Link } from 'react-router-dom'
-import type { EChartsOption } from 'echarts'
-import { getMeta, getSerieNacional, getPorNivel } from '../lib/data'
+import { getMeta, getSerieNacional, getPorNivel, loadJSON } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
 import { solesCompact, pct, ejecucion } from '../lib/format'
-import { Chart } from '../components/Chart'
+import SerieChart, { type PuntoMensual } from '../components/SerieChart'
 import {
   Card, CardHeader, HelpTip, KPI, Pill, Loading, ErrorBox,
 } from '../components/ui'
 
-const NUM_DISTRITOS = 1834
+// Marco territorial oficial (INEI): 1,845 distritos · 195 provincias · 24 departamentos + Callao.
+const NUM_DISTRITOS_OFICIAL = 1845
 
 const MODULOS = [
   {
@@ -41,6 +41,8 @@ function KpisYGrafico() {
   const meta = useAsync(getMeta, [])
   const serie = useAsync(getSerieNacional, [])
   const nivel = useAsync(getPorNivel, [])
+  // Evolución mensual del año vigente (opcional; si no existe, el gráfico usa barras de fases).
+  const mensual = useAsync(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
 
   const loading = meta.loading || serie.loading || nivel.loading
   const error = meta.error || serie.error || nivel.error
@@ -59,40 +61,6 @@ function KpisYGrafico() {
   // Color de ejecución (rojo/ámbar/verde)
   const ejecTone: 'warn' | 'good' | 'brand' = ejec > 0.8 ? 'good' : ejec >= 0.5 ? 'warn' : 'warn'
 
-  const lineOption: EChartsOption = {
-    legend: { top: 0, textStyle: { fontSize: 11 } },
-    tooltip: {
-      trigger: 'axis',
-      valueFormatter: (v) => solesCompact(typeof v === 'number' ? v : Number(v)),
-    },
-    xAxis: {
-      type: 'category',
-      data: serieOrdenada.map((s) => String(s.year)),
-      axisTick: { alignWithLabel: true },
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { formatter: (v: number) => solesCompact(v) },
-    },
-    series: [
-      {
-        name: 'PIM (presupuesto modificado)',
-        type: 'line',
-        smooth: true,
-        symbolSize: 6,
-        data: serieOrdenada.map((s) => s.pim),
-      },
-      {
-        name: 'Devengado (gasto ejecutado)',
-        type: 'line',
-        smooth: true,
-        symbolSize: 6,
-        areaStyle: { opacity: 0.08 },
-        data: serieOrdenada.map((s) => s.devengado),
-      },
-    ],
-  }
-
   return (
     <>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
@@ -109,8 +77,8 @@ function KpisYGrafico() {
         />
         <KPI
           label="Distritos"
-          value={NUM_DISTRITOS.toLocaleString('es-PE')}
-          sub="Cobertura territorial"
+          value={NUM_DISTRITOS_OFICIAL.toLocaleString('es-PE')}
+          sub="195 provincias · 24 dptos + Callao (INEI)"
         />
         <KPI
           label="Fuentes oficiales"
@@ -127,19 +95,20 @@ function KpisYGrafico() {
 
       <Card className="mt-4">
         <CardHeader
-          title="Presupuesto nacional: PIM vs. devengado por año"
-          subtitle={`Serie ${serieOrdenada[0]?.year ?? ''}–${ultima?.year ?? ''} · montos en soles`}
+          title="Presupuesto y ejecución nacional"
+          subtitle="PIA, PIM, devengado y girado · montos en soles · SIAF-MEF"
           help={
             <HelpTip>
-              La línea superior es el PIM (lo que se podía gastar) y la inferior el
-              devengado (lo que efectivamente se gastó). La brecha entre ambas es el
-              presupuesto no ejecutado. Pasa el cursor para ver las cifras exactas en
-              soles. No compares años sin considerar inflación.
+              Con un solo año verás las barras de cada fase del gasto (PIA → PIM →
+              devengado → girado) y, si está disponible, la evolución mes a mes del
+              gasto ejecutado. Con varios años verás la tendencia. La brecha entre
+              PIM y devengado es el presupuesto no ejecutado. No compares años sin
+              considerar inflación.
             </HelpTip>
           }
         />
         <div className="px-2 pb-3">
-          <Chart option={lineOption} height={300} />
+          <SerieChart serie={serieOrdenada} mensual={mensual.data ?? undefined} height={320} />
         </div>
       </Card>
     </>

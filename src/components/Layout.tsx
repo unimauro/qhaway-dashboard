@@ -1,6 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useState } from 'react'
 import { useTheme } from '../lib/theme'
+import AskBot from './AskBot'
+import CommandSearch from './CommandSearch'
+
+const openSearch = () => window.dispatchEvent(new Event('qhaway:open-search'))
 
 const NAV = [
   { to: '/', label: 'Inicio', icon: '◉', end: true },
@@ -32,6 +36,7 @@ export default function Layout() {
       <header className="lg:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 border-b border-ink-200 dark:border-ink-800 bg-white/80 dark:bg-ink-900/80 backdrop-blur">
         <div className="flex items-center gap-2"><Logo /><span className="font-bold">QHAWAY</span></div>
         <div className="flex items-center gap-2">
+          <button onClick={openSearch} aria-label="Buscar" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">⌕</button>
           <ThemeBtn theme={theme} toggle={toggle} />
           <button onClick={() => setOpen((o) => !o)} aria-label="Menú" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">☰</button>
         </div>
@@ -47,7 +52,15 @@ export default function Layout() {
               <p className="text-[10px] text-ink-400 leading-tight mt-0.5">Observatorio Territorial del Perú</p>
             </div>
           </div>
-          <nav className="mt-4 space-y-1">
+          <button
+            onClick={openSearch}
+            className="mt-3 w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-ink-500 dark:text-ink-400 border border-ink-200 dark:border-ink-800 hover:border-brand-500 hover:text-brand-600 transition"
+          >
+            <span aria-hidden>⌕</span>
+            <span className="flex-1 text-left">Buscar distrito, región…</span>
+            <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-800">Ctrl K</kbd>
+          </button>
+          <nav className="mt-3 space-y-1">
             {NAV.map((n) => (
               <NavLink
                 key={n.to}
@@ -85,6 +98,10 @@ export default function Layout() {
           </footer>
         </main>
       </div>
+
+      {/* Buscador global (Ctrl/Cmd+K) y asistente IA flotante */}
+      <CommandSearch />
+      <AskBot />
     </div>
   )
 }
