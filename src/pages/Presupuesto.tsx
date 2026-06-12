@@ -88,6 +88,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
 
   // Fuentes que NO dependen del año
   const serie = useAsync<SerieNacional[]>(getSerieNacional, [])
+  const oficial = useAsync<SerieNacional[]>(() => loadJSON<SerieNacional[]>('serie-historica-oficial.json'), [])
   const mensual = useAsync<PuntoMensual[]>(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
   const niveles = useAsync<PorNivel[]>(getPorNivel, [])
   const geo = useAsync<unknown>(getGeoJSON, [])
@@ -168,7 +169,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
 
       {/* 3 y 4 en grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <SerieTemporal serie={serie} mensual={mensual} />
+        <SerieTemporal serie={serie} oficial={oficial} mensual={mensual} />
         <SankeyFases flujo={flujo} year={year} />
       </div>
 
@@ -416,27 +417,31 @@ function DetalleBox({ d, fase }: { d: { titulo: string; sub?: string; pim: numbe
 
 /* ───────────────────────── 3. Serie temporal ───────────────────────── */
 
-function SerieTemporal({ serie, mensual }: {
+function SerieTemporal({ serie, oficial, mensual }: {
   serie: ReturnType<typeof useAsync<SerieNacional[]>>
+  oficial: ReturnType<typeof useAsync<SerieNacional[]>>
   mensual: ReturnType<typeof useAsync<PuntoMensual[]>>
 }) {
+  const usarOficial = oficial.data && oficial.data.length >= 2
+  const datos = usarOficial ? oficial.data! : serie.data
   return (
     <Card>
       <CardHeader
-        title="Presupuesto y ejecución nacional"
-        subtitle="PIA, PIM, devengado y girado · evolución por mes/trimestre/semestre/año"
+        title="Presupuesto del Sector Público — tendencia anual"
+        subtitle="PIM y devengado al cierre · Informe Global de la Gestión Presupuestaria (MEF)"
         help={
           <span>
-            Con un año, las barras muestran cada fase del gasto y, si hay datos
-            mensuales, la <strong>evolución del devengado</strong> dentro del año
-            (con el PIM de referencia). Con varios años verás la tendencia. Cifras en
-            <strong> soles corrientes</strong> (no ajustadas por inflación).
+            Serie histórica oficial del Presupuesto del Sector Público (cifras de cierre
+            anual, MEF). Las barras son el <strong>PIM</strong> y la línea el
+            <strong> devengado</strong>. El año en curso (2025) está en ejecución y se
+            detalla en los filtros y el mapa de arriba. Cifras en <strong>soles
+            corrientes</strong> (no ajustadas por inflación).
           </span>
         }
       />
       <div className="px-4 pb-4">
-        {serie.loading ? <Loading /> : serie.error ? <ErrorBox error={serie.error} /> : !serie.data ? <Loading /> : (
-          <SerieChartShared serie={serie.data} mensual={mensual.data ?? undefined} height={320} />
+        {serie.loading ? <Loading /> : serie.error ? <ErrorBox error={serie.error} /> : !datos ? <Loading /> : (
+          <SerieChartShared serie={datos} mensual={mensual.data ?? undefined} height={320} />
         )}
       </div>
     </Card>
