@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
-import { getGeoJSON, getPorDistrito, loadJSON } from '../lib/data'
+import { getGeoJSON, loadJSON } from '../lib/data'
 import type { PorDistrito } from '../lib/types'
 import { useAsync } from '../lib/useAsync'
 import { solesCompact, soles, pct, num, ejecucion } from '../lib/format'
@@ -73,6 +73,36 @@ const ATRIB_OPTS: { value: Atribucion; label: string }[] = [
   { value: 'ejecutora', label: 'Por ejecutora' },
 ]
 
+const FALLBACK_YEAR = 2025
+const YEARS = [2026, 2025, 2024, 2023, 2022, 2021]
+const YEAR_OPTS: { value: number; label: string }[] = YEARS.map((y) => ({ value: y, label: String(y) }))
+
+/**
+ * Resultado de una carga año-aware: filas + de qué año salieron realmente
+ * (puede diferir del pedido si hubo fallback) + bandera de fallback.
+ */
+interface CargaAnio<T> {
+  rows: T[]
+  yearReal: number
+  fellBack: boolean
+}
+
+/**
+ * Intenta cargar el archivo del año pedido; si no existe (HTTP error),
+ * cae con gracia al año de respaldo (2025). Si el año pedido ES el de
+ * respaldo, no hay fallback posible y se propaga el error.
+ */
+async function cargarConFallback<T>(plantilla: (y: number) => string, year: number): Promise<CargaAnio<T>> {
+  try {
+    const rows = await loadJSON<T[]>(plantilla(year))
+    return { rows, yearReal: year, fellBack: false }
+  } catch (e) {
+    if (year === FALLBACK_YEAR) throw e
+    const rows = await loadJSON<T[]>(plantilla(FALLBACK_YEAR))
+    return { rows, yearReal: FALLBACK_YEAR, fellBack: true }
+  }
+}
+
 /* ───────────────────────── Utilidades ───────────────────────── */
 
 /** Normaliza tildes/mayúsculas para comparar nombres de preset con los datos. */
@@ -117,76 +147,101 @@ const PRESETS: Preset[] = [
 /* ───────────────────────── Página ───────────────────────── */
 
 export default function Explorador() {
-  const funcionDS = useAsync<FilaFuncion[]>(() => loadJSON<FilaFuncion[]>('explorador-funcion-depto-2025.json'), [])
-  const funcionMetaDS = useAsync<FilaFuncion[]>(() => loadJSON<FilaFuncion[]>('explorador-funcion-meta-2025.json'), [])
-  const fuenteDS = useAsync<FilaFuente[]>(() => loadJSON<FilaFuente[]>('explorador-fuente-depto-2025.json'), [])
   const geo = useAsync<unknown>(getGeoJSON, [])
-  const distrito = useAsync<PorDistrito[]>(() => getPorDistrito(2025), [])
-
   return (
     <div className="space-y-5">
       <SectionIntro title="Explorador Presupuestal Multidimensional">
         Cruza en un mismo lugar <strong>presupuesto × territorio × función/fuente × nivel de gobierno</strong>:
         un cruce que el portal del MEF (Consulta Amigable) no integra en una sola vista interactiva.
-        Esta es la <strong>Fase 1</strong>: cruces pre-computados del año <strong>2025</strong> sobre datos
-        del SIAF-MEF. El cubo OLAP completo —cruces arbitrarios de Presupuesto × Clima × Riesgos × Pobreza ×
+        Esta es la <strong>Fase 1</strong>: cruces pre-computados por año sobre datos del SIAF-MEF.
+        El cubo OLAP completo —cruces arbitrarios de Presupuesto × Clima × Riesgos × Pobreza ×
         Piso altitudinal, con serie histórica— llega en la <strong>Fase 2</strong>, con backend. Sin sobre-promesas:
         aquí solo verás lo que los datos publicados permiten afirmar.
       </SectionIntro>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Pill tone="brand">Año 2025</Pill>
+        <Pill tone="brand">año seleccionable</Pill>
         <Pill tone="warn">serie histórica y cubo completo: Fase 2</Pill>
         <span className="text-[11px] text-ink-400">Fuente: SIAF-MEF (Consulta Amigable). Cifras en soles corrientes.</span>
       </div>
 
-      <ExploradorBody funcionDS={funcionDS} funcionMetaDS={funcionMetaDS} fuenteDS={fuenteDS} geo={geo} distrito={distrito} />
+      <ExploradorBody geo={geo} />
     </div>
   )
 }
 
-function ExploradorBody({
-  funcionDS, funcionMetaDS, fuenteDS, geo, distrito,
-}: {
-  funcionDS: ReturnType<typeof useAsync<FilaFuncion[]>>
-  funcionMetaDS: ReturnType<typeof useAsync<FilaFuncion[]>>
-  fuenteDS: ReturnType<typeof useAsync<FilaFuente[]>>
-  geo: ReturnType<typeof useAsync<unknown>>
-  distrito: ReturnType<typeof useAsync<PorDistrito[]>>
-}) {
+function ExploradorBody({ geo }: { geo: ReturnType<typeof useAsync<unknown>> }) {
   const [dimension, setDimension] = useState<Dimension>('funcion')
   const [departamento, setDepartamento] = useState<string>(TODOS)
   const [nivel, setNivel] = useState<NivelSel>('Todos')
   const [cat, setCat] = useState<string>(TODOS)
   const [fase, setFase] = useState<Fase>('pim')
   const [atribucion, setAtribucion] = useState<Atribucion>('meta')
+  const [year, setYear] = useState<number>(FALLBACK_YEAR)
   const [orderDesc, setOrderDesc] = useState<boolean>(true)
 
-  // La atribución efectiva: "Por fuente" solo existe por ejecutora.
+  // La atribución efectiva: "Por fuente" solo existe por ejecutora (-2025) o META por año.
   const atribEfectiva: Atribucion = dimension === 'fuente' ? 'ejecutora' : atribucion
+
+  /* ── Cargas año-aware con fallback al 2025 ── */
+
+  // Función × META × año (recomendado). Año-aware con fallback.
+  const funcionMeta = useAsync<CargaAnio<FilaFuncion>>(
+    () => cargarConFallback<FilaFuncion>((y) => `explorador-funcion-meta-${y}.json`, year),
+    [year],
+  )
+  // Función × ejecutora: por ahora solo existe el archivo 2025 (fijo).
+  const funcionEjec = useAsync<FilaFuncion[]>(
+    () => loadJSON<FilaFuncion[]>('explorador-funcion-depto-2025.json'),
+    [],
+  )
+  // Fuente × META × año si existe; si no, cae a fuente × ejecutora 2025.
+  const fuenteMeta = useAsync<CargaAnio<FilaFuente>>(
+    () => cargarConFallback<FilaFuente>((y) => `explorador-fuente-meta-${y}.json`, year)
+      .catch(() => loadJSON<FilaFuente[]>('explorador-fuente-depto-2025.json')
+        .then((rows): CargaAnio<FilaFuente> => ({ rows, yearReal: FALLBACK_YEAR, fellBack: true }))),
+    [year],
+  )
+  // Distritos del año (para cobertura), con fallback a 2025.
+  const distrito = useAsync<CargaAnio<PorDistrito>>(
+    () => cargarConFallback<PorDistrito>((y) => `por-distrito-${y}.json`, year),
+    [year],
+  )
 
   // Dataset activo según la dimensión y la atribución territorial, normalizado a FilaNorm.
   const filas: FilaNorm[] | undefined = useMemo(() => {
     if (dimension === 'funcion') {
-      // Por destino (META) vs por ejecutora. Si el de META falta, cae a ejecutora.
-      const src = atribEfectiva === 'meta' ? (funcionMetaDS.data ?? funcionDS.data) : funcionDS.data
+      // Por destino (META, año-aware) vs por ejecutora (2025). Si META falta, cae a ejecutora.
+      const src = atribEfectiva === 'meta'
+        ? (funcionMeta.data?.rows ?? funcionEjec.data)
+        : funcionEjec.data
       if (!src) return undefined
       return src.map((r) => ({
         ubigeo: r.ubigeo, departamento: r.departamento, cat: r.funcion,
         nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0,
       }))
     }
-    if (!fuenteDS.data) return undefined
-    return fuenteDS.data.map((r) => ({
+    if (!fuenteMeta.data) return undefined
+    return fuenteMeta.data.rows.map((r) => ({
       ubigeo: r.ubigeo, departamento: r.departamento, cat: r.fuente,
       nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0,
     }))
-  }, [dimension, atribEfectiva, funcionDS.data, funcionMetaDS.data, fuenteDS.data])
+  }, [dimension, atribEfectiva, funcionMeta.data, funcionEjec.data, fuenteMeta.data])
 
   // ¿El usuario pidió META pero está mirando "Por fuente" (forzado a ejecutora)?
   const metaNoDisponible = dimension === 'fuente' && atribucion === 'meta'
-  // ¿Pidió META en función pero el dataset META no cargó (fallback a ejecutora)?
-  const metaFallback = dimension === 'funcion' && atribucion === 'meta' && !funcionMetaDS.data && !!funcionDS.data
+  // ¿Pidió META en función pero el dataset META no cargó (fallback a ejecutora 2025)?
+  const metaFallback = dimension === 'funcion' && atribucion === 'meta' && !funcionMeta.data && !!funcionEjec.data
+  // ¿El año pedido no existía y se cayó al 2025? (depende de la dimensión/atribución activa)
+  const dataFellBack =
+    dimension === 'funcion'
+      ? (atribEfectiva === 'meta' ? (funcionMeta.data?.fellBack ?? false) : year !== FALLBACK_YEAR)
+      : (fuenteMeta.data?.fellBack ?? false)
+  // Año del que realmente provienen los datos mostrados.
+  const yearReal =
+    dimension === 'funcion'
+      ? (atribEfectiva === 'meta' ? (funcionMeta.data?.yearReal ?? year) : FALLBACK_YEAR)
+      : (fuenteMeta.data?.yearReal ?? year)
 
   // Catálogos para los selects (salen de los datos).
   const deptosOpts = useMemo(() => {
@@ -207,10 +262,11 @@ function ExploradorBody({
   // Aplica un preset: ajusta todos los selects, validando contra los datos disponibles.
   function aplicarPreset(p: Preset) {
     setDimension(p.dimension)
-    // Re-derivar el dataset del preset para validar nombres.
+    // Re-derivar el dataset del preset para validar nombres (los nombres de depto/función
+    // son idénticos entre años y atribuciones, así que cualquier fuente cargada sirve).
     const ds: FilaNorm[] = p.dimension === 'funcion'
-      ? (funcionDS.data ?? []).map((r) => ({ ubigeo: r.ubigeo, departamento: r.departamento, cat: r.funcion, nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0 }))
-      : (fuenteDS.data ?? []).map((r) => ({ ubigeo: r.ubigeo, departamento: r.departamento, cat: r.fuente, nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0 }))
+      ? ((funcionMeta.data?.rows ?? funcionEjec.data) ?? []).map((r) => ({ ubigeo: r.ubigeo, departamento: r.departamento, cat: r.funcion, nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0 }))
+      : (fuenteMeta.data?.rows ?? []).map((r) => ({ ubigeo: r.ubigeo, departamento: r.departamento, cat: r.fuente, nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0 }))
 
     const dep = p.departamento === TODOS
       ? TODOS
@@ -225,9 +281,13 @@ function ExploradorBody({
     setFase('pim')
   }
 
-  // ¿Está cargando lo esencial? (los dos datasets de dimensión)
-  const cargando = funcionDS.loading || fuenteDS.loading
-  const errorPrincipal = (dimension === 'funcion' ? funcionDS.error : fuenteDS.error)
+  // ¿Está cargando lo esencial para la dimensión activa?
+  const cargando = dimension === 'funcion'
+    ? (funcionMeta.loading || funcionEjec.loading)
+    : fuenteMeta.loading
+  const errorPrincipal = dimension === 'funcion'
+    ? (funcionMeta.error && funcionEjec.error ? (funcionMeta.error ?? funcionEjec.error) : undefined)
+    : fuenteMeta.error
 
   // Filas que cumplen el filtro completo (dep + cat + nivel) — base de KPIs y tabla.
   const filasFiltradas = useMemo(() => {
@@ -245,7 +305,7 @@ function ExploradorBody({
     return { pim, dev, frac: ejecucion(dev, pim), n: filasFiltradas.length }
   }, [filasFiltradas])
 
-  if (cargando) return <Loading label="Cargando cruces presupuestales 2025…" />
+  if (cargando) return <Loading label={`Cargando cruces presupuestales ${year}…`} />
   if (errorPrincipal && !filas) return <ErrorBox error={errorPrincipal} />
   if (!filas) return <Loading />
 
@@ -254,6 +314,7 @@ function ExploradorBody({
       {/* ── Panel de filtros sticky ── */}
       <div className="sticky top-0 z-30 -mx-2 px-2 py-2 backdrop-blur bg-white/80 dark:bg-ink-950/80 border-b border-ink-200 dark:border-ink-800 rounded-b-xl">
         <div className="flex flex-wrap items-end gap-3">
+          <Select<number> value={year} onChange={setYear} options={YEAR_OPTS} label="Año" />
           <Select<Dimension>
             value={dimension}
             onChange={(d) => { setDimension(d); setCat(TODOS) }}
@@ -283,16 +344,21 @@ function ExploradorBody({
           </div>
         </div>
 
-        {/* Avisos de atribución */}
-        {(metaNoDisponible || metaFallback) && (
+        {/* Avisos de atribución / año */}
+        {(metaNoDisponible || metaFallback || dataFellBack) && (
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            {dataFellBack && (
+              <Pill tone="warn">
+                datos {year} en proceso — mostrando {yearReal}
+              </Pill>
+            )}
             {metaNoDisponible && (
               <Pill tone="warn">
-                «Por fuente» solo existe por ejecutora — esta vista es por ejecutora (Gob. Nacional concentrado en Lima)
+                «Por fuente» por ejecutora ({FALLBACK_YEAR}) — Gob. Nacional concentrado en Lima
               </Pill>
             )}
             {metaFallback && (
-              <Pill tone="warn">no se pudo cargar el dato por destino (META); mostrando por ejecutora</Pill>
+              <Pill tone="warn">no se pudo cargar el dato por destino (META); mostrando por ejecutora {FALLBACK_YEAR}</Pill>
             )}
           </div>
         )}
@@ -314,7 +380,7 @@ function ExploradorBody({
       </div>
 
       {/* ── KPIs ── */}
-      <Kpis totales={totales} dimension={dimension} />
+      <Kpis totales={totales} dimension={dimension} year={yearReal} />
 
       {/* ── Ranking + Desglose por nivel ── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -339,6 +405,7 @@ function ExploradorBody({
         cat={cat}
         fase={fase}
         atribucion={atribEfectiva}
+        year={yearReal}
       />
 
       {/* ── Tabla detalle ── */}
@@ -346,23 +413,24 @@ function ExploradorBody({
         filasFiltradas={filasFiltradas}
         dimension={dimension}
         fase={fase}
+        year={yearReal}
         orderDesc={orderDesc}
         onToggleOrder={() => setOrderDesc((v) => !v)}
       />
 
       {/* ── Cobertura de información ── */}
-      <CoberturaCard geo={geo} distrito={distrito} />
+      <CoberturaCard geo={geo} distrito={distrito} year={year} />
     </div>
   )
 }
 
 /* ───────────────────────── KPIs ───────────────────────── */
 
-function Kpis({ totales, dimension }: { totales: { pim: number; dev: number; frac: number; n: number }; dimension: Dimension }) {
+function Kpis({ totales, dimension, year }: { totales: { pim: number; dev: number; frac: number; n: number }; dimension: Dimension; year: number }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-sm font-semibold text-ink-900 dark:text-ink-50">Resumen del filtro actual</h3>
+        <h3 className="text-sm font-semibold text-ink-900 dark:text-ink-50">Resumen del filtro actual — {year}</h3>
         <HelpTip>
           <strong>PIM</strong>: presupuesto modificado (vigente). <strong>Devengado</strong>: gasto
           reconocido. <strong>% ejecución</strong> = devengado / PIM (rojo &lt;50%, ámbar 50–80%, verde
@@ -587,7 +655,7 @@ function DesgloseChart({ data }: { data: { nivel: string; valor: number; pim: nu
 /* ───────────────────────── Mapa por departamento ───────────────────────── */
 
 function MapaCard({
-  geo, filas, dimension, departamento, nivel, cat, fase, atribucion,
+  geo, filas, dimension, departamento, nivel, cat, fase, atribucion, year,
 }: {
   geo: ReturnType<typeof useAsync<unknown>>
   filas: FilaNorm[]
@@ -597,12 +665,13 @@ function MapaCard({
   cat: string
   fase: Fase
   atribucion: Atribucion
+  year: number
 }) {
   const atribTxt = atribucion === 'meta' ? 'destino (META)' : 'ejecutora'
   return (
     <Card>
       <CardHeader
-        title={`Mapa por departamento — ${FASE_LABEL[fase]} 2025`}
+        title={`Mapa por departamento — ${FASE_LABEL[fase]} ${year}`}
         subtitle={`${dimension === 'funcion' ? 'Función' : 'Fuente'}: ${cat === TODOS ? 'todas' : cat} · ${nivel === 'Todos' ? 'todos los niveles' : NIVEL_LABEL[nivel]} · atribución por ${atribTxt}`}
         help={
           <HelpTip>
@@ -687,11 +756,12 @@ function MapaInner({
 /* ───────────────────────── Tabla detalle ───────────────────────── */
 
 function TablaDetalle({
-  filasFiltradas, dimension, fase, orderDesc, onToggleOrder,
+  filasFiltradas, dimension, fase, year, orderDesc, onToggleOrder,
 }: {
   filasFiltradas: FilaNorm[]
   dimension: Dimension
   fase: Fase
+  year: number
   orderDesc: boolean
   onToggleOrder: () => void
 }) {
@@ -717,7 +787,7 @@ function TablaDetalle({
             con su PIM, devengado y % de ejecución. Pulsa la cabecera de {FASE_LABEL[fase]} para invertir el orden.
           </HelpTip>
         }
-        right={<Pill tone="neutral">2025</Pill>}
+        right={<Pill tone="neutral">{year}</Pill>}
       />
       <div className="px-4 pb-4 overflow-x-auto">
         {rows.length === 0 ? (
@@ -765,20 +835,22 @@ function TablaDetalle({
 /* ───────────────────────── Cobertura de información ───────────────────────── */
 
 function CoberturaCard({
-  geo, distrito,
+  geo, distrito, year,
 }: {
   geo: ReturnType<typeof useAsync<unknown>>
-  distrito: ReturnType<typeof useAsync<PorDistrito[]>>
+  distrito: ReturnType<typeof useAsync<CargaAnio<PorDistrito>>>
+  year: number
 }) {
+  const yearReal = distrito.data?.yearReal ?? year
   return (
     <Card>
       <CardHeader
         title="Cobertura de información"
-        subtitle="Distritos del mapa con y sin dato presupuestal 2025"
+        subtitle={`Distritos del mapa con y sin dato presupuestal ${yearReal}`}
         help={
           <HelpTip>
             Comparamos los distritos del mapa (geojson) contra los que aparecen en el archivo de
-            ejecución por distrito 2025. Un distrito «sin información» no significa necesariamente
+            ejecución por distrito de {yearReal}. Un distrito «sin información» no significa necesariamente
             «sin presupuesto»: puede ser que no tenga ejecución registrada como pliego/ejecutora con
             sede ahí, o que el dato no esté en la fuente con ese ubigeo. Distinguir ambos casos es un
             principio de honestidad del observatorio.
@@ -787,26 +859,30 @@ function CoberturaCard({
         right={<Pill tone="warn">honestidad de datos</Pill>}
       />
       <div className="px-4 pb-4">
-        <CoberturaInner geo={geo} distrito={distrito} />
+        <CoberturaInner geo={geo} distrito={distrito} yearPedido={year} />
       </div>
     </Card>
   )
 }
 
 function CoberturaInner({
-  geo, distrito,
+  geo, distrito, yearPedido,
 }: {
   geo: ReturnType<typeof useAsync<unknown>>
-  distrito: ReturnType<typeof useAsync<PorDistrito[]>>
+  distrito: ReturnType<typeof useAsync<CargaAnio<PorDistrito>>>
+  yearPedido: number
 }) {
   if (geo.loading || distrito.loading) return <Loading label="Calculando cobertura…" />
   if (geo.error) return <ErrorBox error={geo.error} />
   if (distrito.error) return <ErrorBox error={distrito.error} />
   if (!geo.data || !distrito.data) return <Loading />
 
+  const yearReal = distrito.data.yearReal
+  const fellBack = distrito.data.fellBack
+
   // ubigeos con dato presupuestal.
   const conDato = new Set<string>()
-  for (const r of distrito.data) conDato.add(r.ubigeo)
+  for (const r of distrito.data.rows) conDato.add(r.ubigeo)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const feats: any[] = ((geo.data as any).features ?? [])
@@ -840,9 +916,12 @@ function CoberturaInner({
 
   return (
     <div className="space-y-4">
+      {fellBack && (
+        <Pill tone="warn">por-distrito {yearPedido} en proceso — cobertura calculada con {yearReal}</Pill>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI label="Con información" value={num(conInfo)} sub="distritos del mapa con dato 2025" accent />
-        <KPI label="Sin información" value={num(sinInfo)} sub="no aparecen en por-distrito 2025" />
+        <KPI label="Con información" value={num(conInfo)} sub={`distritos del mapa con dato ${yearReal}`} accent />
+        <KPI label="Sin información" value={num(sinInfo)} sub={`no aparecen en por-distrito ${yearReal}`} />
         <Card className="px-4 py-3">
           <p className="text-xs text-ink-400">% Cobertura</p>
           <p className="text-2xl font-bold tracking-tight" style={{ color: colorEjec(cobertura) }}>{pct(cobertura)}</p>
