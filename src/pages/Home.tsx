@@ -44,6 +44,8 @@ function KpisYGrafico() {
   const nivel = useAsync(getPorNivel, [])
   // Evolución mensual del año vigente (opcional; si no existe, el gráfico usa barras de fases).
   const mensual = useAsync(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
+  // Serie histórica oficial (Presupuesto del Sector Público, cierre anual, MEF).
+  const oficial = useAsync(() => loadJSON<import('../lib/types').SerieNacional[]>('serie-historica-oficial.json'), [])
 
   const loading = meta.loading || serie.loading || nivel.loading
   const error = meta.error || serie.error || nivel.error
@@ -97,20 +99,24 @@ function KpisYGrafico() {
 
       <Card className="mt-4">
         <CardHeader
-          title="Presupuesto y ejecución nacional"
-          subtitle="PIA, PIM, devengado y girado · montos en soles · SIAF-MEF"
+          title="Presupuesto del Sector Público — tendencia anual"
+          subtitle="PIM y devengado al cierre · Informe Global de la Gestión Presupuestaria (MEF)"
           help={
             <HelpTip>
-              Con un solo año verás las barras de cada fase del gasto (PIA → PIM →
-              devengado → girado) y, si está disponible, la evolución mes a mes del
-              gasto ejecutado. Con varios años verás la tendencia. La brecha entre
-              PIM y devengado es el presupuesto no ejecutado. No compares años sin
-              considerar inflación.
+              Serie histórica oficial del Presupuesto del Sector Público (cifras de
+              cierre de cada año, fuente MEF). Las barras son el PIM y la línea el
+              devengado (gasto ejecutado). El año en curso (2025) está en ejecución y
+              se detalla en los indicadores de arriba y en los demás módulos. No
+              compares años sin considerar inflación (montos en soles corrientes).
             </HelpTip>
           }
         />
         <div className="px-2 pb-3">
-          <SerieChart serie={serieOrdenada} mensual={mensual.data ?? undefined} height={320} />
+          <SerieChart
+            serie={oficial.data && oficial.data.length >= 2 ? oficial.data : serieOrdenada}
+            mensual={mensual.data ?? undefined}
+            height={320}
+          />
         </div>
       </Card>
     </>
