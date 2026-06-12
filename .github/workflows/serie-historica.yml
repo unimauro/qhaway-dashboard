@@ -1,0 +1,48 @@
+name: Backfill serie histórica (MEF, batch largo)
+
+# Construye la serie nacional multi-año desde las tablas mensuales completas del MEF.
+# La API del MEF es MUY lenta (60-120s/consulta sobre tablas de ~11M filas), así que
+# este job corre largo y es RESUMIBLE: cachea el avance (etl/year_tabs.json y
+# serie-nacional.json) y se commitea lo acumulado. Ejecútalo a mano varias veces hasta
+# completar todos los años (cada corrida avanza desde donde quedó).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 1 * *'   # 1.º de cada mes, como respaldo
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330   # ~5.5 h (tope del runner es 6 h)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Descubrir tablas mensuales completas (MONTO_GIRADO)
+        run: |
+          python - <<'PY'
+          import urllib.request, urllib.parse, json
+          API="https://api.datosabiertos.mef.gob.pe/DatosAbiertos/v1/datastore_search_sql"
+          q="SELECT table_name FROM information_schema.columns WHERE column_name='MONTO_GIRADO' AND table_name NOT LIKE '%_tmp'"
+          with urllib.request.urlopen(API+"?sql="+urllib.parse.quote(q), timeout=280) as r:
+              rows=json.loads(r.read().decode('utf-8','ignore')).get("records",[])
+          json.dump([x["table_name"] for x in rows], open("/tmp/girado_tabs.json","w"))
+          print("tablas:", len(rows))
+          PY
+      - name: Backfill (resumible)
+        run: python etl/serie_historica.py || true
+      - name: Commit avance
+        run: |
+          git config user.name "qhaway-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add public/data/serie-nacional.json etl/year_tabs.json || true
+          if git diff --staged --quiet; then
+            echo "Sin cambios."
+          else
+            git commit -m "serie histórica: avance backfill ($(date +%Y-%m-%d))"
+            git push
+          fi
