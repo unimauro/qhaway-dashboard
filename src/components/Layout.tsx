@@ -12,6 +12,7 @@ const NAV = [
   { to: '/pisos', label: 'Pisos Altitudinales', icon: '⛰' },
   { to: '/riesgos', label: 'Riesgos Territoriales', icon: '◬' },
   { to: '/prosperidad', label: 'Prosperidad (IPT)', icon: '★' },
+  { to: '/explorador', label: 'Explorador Multidimensional', icon: '🔍' },
   { to: '/metodologia', label: 'Metodología y FAQ', icon: '?' },
 ]
 
