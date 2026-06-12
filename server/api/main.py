@@ -60,6 +60,19 @@ def q(sql: str, params=()):
             return cur.fetchall()
 
 
+@app.get("/")
+def root():
+    return {
+        "api": "QHAWAY — Observatorio del Presupuesto Público del Perú",
+        "estado": "ok",
+        "endpoints": ["/health", "/api/meta", "/api/serie-nacional", "/api/por-distrito/{año}",
+                      "/api/por-funcion/{año}", "/api/por-sector/{año}", "/api/por-departamento-historico",
+                      "/api/explorador-funcion-meta/{año}", "/api/cubo?year=&dimension=&nivel=&departamento="],
+        "dashboard": "https://unimauro.github.io/qhaway-dashboard/",
+        "fuente": "MEF — Consulta del Gasto (datos abiertos), cargado en PostgreSQL propio (FIEECS-UNI).",
+    }
+
+
 @app.get("/health")
 def health():
     try:
