@@ -5,10 +5,13 @@ name: Backfill serie histórica (MEF, batch largo)
 # este job corre largo y es RESUMIBLE: cachea el avance (etl/year_tabs.json y
 # serie-nacional.json) y se commitea lo acumulado. Ejecútalo a mano varias veces hasta
 # completar todos los años (cada corrida avanza desde donde quedó).
+# NOTA: la API de datos abiertos del MEF hace timeout (>210s) al agregar las
+# tablas mensuales completas (~11M filas/año), por lo que este backfill NO es
+# confiable. Se deja solo como disparo manual (workflow_dispatch) para futuros
+# intentos; la vía recomendada para la serie histórica es un scraper dedicado de
+# la Consulta Amigable (ver roadmap), no esta API.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 6 1 * *'   # 1.º de cada mes, como respaldo
 
 permissions:
   contents: write
