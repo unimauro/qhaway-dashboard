@@ -41,6 +41,7 @@ interface FilaNorm {
 
 type Dimension = 'funcion' | 'fuente'
 type Fase = 'pim' | 'devengado'
+type Atribucion = 'meta' | 'ejecutora'
 type NivelSel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
 
 const TODOS = '__TODOS__'
@@ -66,6 +67,11 @@ const FASE_OPTS: { value: Fase; label: string }[] = [
   { value: 'devengado', label: 'Devengado (gastado)' },
 ]
 const FASE_LABEL: Record<Fase, string> = { pim: 'PIM', devengado: 'Devengado' }
+
+const ATRIB_OPTS: { value: Atribucion; label: string }[] = [
+  { value: 'meta', label: 'Por destino (META) — recomendado' },
+  { value: 'ejecutora', label: 'Por ejecutora' },
+]
 
 /* ───────────────────────── Utilidades ───────────────────────── */
 
@@ -112,6 +118,7 @@ const PRESETS: Preset[] = [
 
 export default function Explorador() {
   const funcionDS = useAsync<FilaFuncion[]>(() => loadJSON<FilaFuncion[]>('explorador-funcion-depto-2025.json'), [])
+  const funcionMetaDS = useAsync<FilaFuncion[]>(() => loadJSON<FilaFuncion[]>('explorador-funcion-meta-2025.json'), [])
   const fuenteDS = useAsync<FilaFuente[]>(() => loadJSON<FilaFuente[]>('explorador-fuente-depto-2025.json'), [])
   const geo = useAsync<unknown>(getGeoJSON, [])
   const distrito = useAsync<PorDistrito[]>(() => getPorDistrito(2025), [])
@@ -133,15 +140,16 @@ export default function Explorador() {
         <span className="text-[11px] text-ink-400">Fuente: SIAF-MEF (Consulta Amigable). Cifras en soles corrientes.</span>
       </div>
 
-      <ExploradorBody funcionDS={funcionDS} fuenteDS={fuenteDS} geo={geo} distrito={distrito} />
+      <ExploradorBody funcionDS={funcionDS} funcionMetaDS={funcionMetaDS} fuenteDS={fuenteDS} geo={geo} distrito={distrito} />
     </div>
   )
 }
 
 function ExploradorBody({
-  funcionDS, fuenteDS, geo, distrito,
+  funcionDS, funcionMetaDS, fuenteDS, geo, distrito,
 }: {
   funcionDS: ReturnType<typeof useAsync<FilaFuncion[]>>
+  funcionMetaDS: ReturnType<typeof useAsync<FilaFuncion[]>>
   fuenteDS: ReturnType<typeof useAsync<FilaFuente[]>>
   geo: ReturnType<typeof useAsync<unknown>>
   distrito: ReturnType<typeof useAsync<PorDistrito[]>>
@@ -151,13 +159,19 @@ function ExploradorBody({
   const [nivel, setNivel] = useState<NivelSel>('Todos')
   const [cat, setCat] = useState<string>(TODOS)
   const [fase, setFase] = useState<Fase>('pim')
+  const [atribucion, setAtribucion] = useState<Atribucion>('meta')
   const [orderDesc, setOrderDesc] = useState<boolean>(true)
 
-  // Dataset activo según la dimensión, normalizado a FilaNorm.
+  // La atribución efectiva: "Por fuente" solo existe por ejecutora.
+  const atribEfectiva: Atribucion = dimension === 'fuente' ? 'ejecutora' : atribucion
+
+  // Dataset activo según la dimensión y la atribución territorial, normalizado a FilaNorm.
   const filas: FilaNorm[] | undefined = useMemo(() => {
     if (dimension === 'funcion') {
-      if (!funcionDS.data) return undefined
-      return funcionDS.data.map((r) => ({
+      // Por destino (META) vs por ejecutora. Si el de META falta, cae a ejecutora.
+      const src = atribEfectiva === 'meta' ? (funcionMetaDS.data ?? funcionDS.data) : funcionDS.data
+      if (!src) return undefined
+      return src.map((r) => ({
         ubigeo: r.ubigeo, departamento: r.departamento, cat: r.funcion,
         nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0,
       }))
@@ -167,7 +181,12 @@ function ExploradorBody({
       ubigeo: r.ubigeo, departamento: r.departamento, cat: r.fuente,
       nivel: r.nivel, pim: r.pim || 0, devengado: r.devengado || 0,
     }))
-  }, [dimension, funcionDS.data, fuenteDS.data])
+  }, [dimension, atribEfectiva, funcionDS.data, funcionMetaDS.data, fuenteDS.data])
+
+  // ¿El usuario pidió META pero está mirando "Por fuente" (forzado a ejecutora)?
+  const metaNoDisponible = dimension === 'fuente' && atribucion === 'meta'
+  // ¿Pidió META en función pero el dataset META no cargó (fallback a ejecutora)?
+  const metaFallback = dimension === 'funcion' && atribucion === 'meta' && !funcionMetaDS.data && !!funcionDS.data
 
   // Catálogos para los selects (salen de los datos).
   const deptosOpts = useMemo(() => {
@@ -250,7 +269,33 @@ function ExploradorBody({
             label={dimension === 'funcion' ? 'Función' : 'Fuente de financiamiento'}
           />
           <Select<Fase> value={fase} onChange={setFase} options={FASE_OPTS} label="Fase a mostrar" />
+          <div className="flex items-end gap-1.5">
+            <Select<Atribucion> value={atribucion} onChange={setAtribucion} options={ATRIB_OPTS} label="Atribución territorial" />
+            <div className="pb-1.5">
+              <HelpTip>
+                <strong>Por destino (META)</strong>: a qué territorio llega el proyecto —es la lectura
+                territorial correcta (recomendada). <strong>Por ejecutora</strong>: dónde está la entidad
+                que administra el gasto; con esta lectura el <strong>Gobierno Nacional se concentra en
+                Lima</strong> (sede de ministerios y programas), aunque las obras estén en todo el país.
+                La dimensión «Por fuente» solo tiene datos por ejecutora.
+              </HelpTip>
+            </div>
+          </div>
         </div>
+
+        {/* Avisos de atribución */}
+        {(metaNoDisponible || metaFallback) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {metaNoDisponible && (
+              <Pill tone="warn">
+                «Por fuente» solo existe por ejecutora — esta vista es por ejecutora (Gob. Nacional concentrado en Lima)
+              </Pill>
+            )}
+            {metaFallback && (
+              <Pill tone="warn">no se pudo cargar el dato por destino (META); mostrando por ejecutora</Pill>
+            )}
+          </div>
+        )}
 
         {/* Casos de uso (presets) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -293,6 +338,7 @@ function ExploradorBody({
         nivel={nivel}
         cat={cat}
         fase={fase}
+        atribucion={atribEfectiva}
       />
 
       {/* ── Tabla detalle ── */}
@@ -541,7 +587,7 @@ function DesgloseChart({ data }: { data: { nivel: string; valor: number; pim: nu
 /* ───────────────────────── Mapa por departamento ───────────────────────── */
 
 function MapaCard({
-  geo, filas, dimension, departamento, nivel, cat, fase,
+  geo, filas, dimension, departamento, nivel, cat, fase, atribucion,
 }: {
   geo: ReturnType<typeof useAsync<unknown>>
   filas: FilaNorm[]
@@ -550,21 +596,25 @@ function MapaCard({
   nivel: NivelSel
   cat: string
   fase: Fase
+  atribucion: Atribucion
 }) {
+  const atribTxt = atribucion === 'meta' ? 'destino (META)' : 'ejecutora'
   return (
     <Card>
       <CardHeader
         title={`Mapa por departamento — ${FASE_LABEL[fase]} 2025`}
-        subtitle={`${dimension === 'funcion' ? 'Función' : 'Fuente'}: ${cat === TODOS ? 'todas' : cat} · ${nivel === 'Todos' ? 'todos los niveles' : NIVEL_LABEL[nivel]}`}
+        subtitle={`${dimension === 'funcion' ? 'Función' : 'Fuente'}: ${cat === TODOS ? 'todas' : cat} · ${nivel === 'Todos' ? 'todos los niveles' : NIVEL_LABEL[nivel]} · atribución por ${atribTxt}`}
         help={
           <HelpTip>
             Cada departamento se colorea por el {FASE_LABEL[fase]} agregado del filtro (todos sus distritos
             del mapa toman el mismo color, porque el dato del explorador es por departamento, no por distrito).
             Más intenso = más soles. Si filtras un departamento concreto, queda <strong>resaltado</strong>.
-            No es gasto por lugar de obra ni per cápita.
+            La atribución <strong>por destino (META)</strong> reparte el gasto al territorio donde llega el
+            proyecto; <strong>por ejecutora</strong> concentra el Gobierno Nacional en Lima. No es gasto por
+            lugar de obra exacto ni per cápita.
           </HelpTip>
         }
-        right={<Pill tone="warn">agregado por depto</Pill>}
+        right={<Pill tone={atribucion === 'meta' ? 'good' : 'warn'}>por {atribTxt}</Pill>}
       />
       <div className="px-4 pb-4">
         <MapaInner geo={geo} filas={filas} departamento={departamento} nivel={nivel} cat={cat} fase={fase} />
