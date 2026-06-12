@@ -35,12 +35,21 @@ async function fromStatic<T>(path: string): Promise<T> {
   return (await res.json()) as T
 }
 
+// Si la API está lenta (p. ej. mientras se migra el histórico y el VPS está saturado),
+// abortamos y caemos al JSON estático en vez de dejar el spinner colgado.
+const API_TIMEOUT_MS = 6000
+function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), ms)
+  return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t))
+}
+
 export async function loadJSON<T>(path: string): Promise<T> {
   if (cache.has(path)) return cache.get(path) as T
   const ep = apiEndpoint(path)
   if (ep) {
     try {
-      const res = await fetch(`${API_BASE}/api/${ep}`)
+      const res = await fetchWithTimeout(`${API_BASE}/api/${ep}`, API_TIMEOUT_MS)
       if (res.ok) {
         const json = (await res.json()) as T
         // Si la API aún no tiene ese dato cargado (arreglo vacío), usa el estático.

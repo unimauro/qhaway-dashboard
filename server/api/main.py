@@ -4,8 +4,9 @@ endpoint de cubo OLAP. Datos estáticos por año → cacheados en memoria.
 """
 import os
 import time
+import functools
 from collections import deque
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import psycopg
@@ -59,6 +60,36 @@ def q(sql: str, params=()):
             return cur.fetchall()
 
 
+# --- Caché en memoria con TTL ---
+# Los datos por año son inmutables una vez cargados, así que cachearlos es seguro.
+# A diferencia del lru_cache anterior: (1) TTL, para que aparezcan años nuevos tras la
+# migración sin reiniciar; (2) NUNCA cacheamos resultados vacíos (el bug previo cacheaba
+# el [] de un año aún no cargado y lo servía para siempre).
+CACHE_TTL = int(os.environ.get("CACHE_TTL", "900"))   # 15 min
+_cache: dict = {}
+
+
+def ttl_cache(fn):
+    @functools.wraps(fn)
+    def wrap(*args):
+        key = (fn.__name__, args)
+        hit = _cache.get(key)
+        now = time.time()
+        if hit and hit[0] > now:
+            return hit[1]
+        val = fn(*args)
+        if val:  # no cachear vacíos/None → reintenta hasta que la migración cargue el año
+            _cache[key] = (now + CACHE_TTL, val)
+        return val
+    return wrap
+
+
+# Datos por año, inmutables → el navegador/CDN pueden cachear duro.
+CACHE_YEAR = "public, max-age=86400, stale-while-revalidate=604800"
+# Meta cambia conforme la migración carga años → caché corto.
+CACHE_META = "public, max-age=60"
+
+
 @app.get("/")
 def root():
     return {
@@ -96,45 +127,53 @@ def meta():
 
 
 @app.get("/api/serie-nacional")
+@ttl_cache
 def serie_nacional():
     return q("SELECT ano AS year, pia, pim, certificado, devengado, girado FROM gasto_nacional ORDER BY ano")
 
 
 @app.get("/api/por-departamento-historico")
+@ttl_cache
 def depto_hist():
     return q("SELECT ano AS year, ubigeo, departamento, pia, pim, certificado, devengado, girado "
              "FROM gasto_depto_hist ORDER BY ano, ubigeo")
 
 
+@ttl_cache
 def _por_distrito(year: int):
     return q("SELECT ubigeo, departamento, provincia, distrito, nivel, pia, pim, devengado, girado "
              "FROM gasto_distrito WHERE ano=%s", (year,))
 
 
 @app.get("/api/por-distrito/{year}")
-def por_distrito(year: int):
+def por_distrito(year: int, response: Response):
     rows = _por_distrito(year)
     if not rows:
         raise HTTPException(404, f"sin datos distritales para {year}")
+    response.headers["Cache-Control"] = CACHE_YEAR
     return rows
 
 
 @app.get("/api/por-funcion/{year}")
+@ttl_cache
 def por_funcion(year: int):
     return q("SELECT funcion, pim, devengado, girado FROM gasto_funcion WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
 @app.get("/api/por-sector/{year}")
+@ttl_cache
 def por_sector(year: int):
     return q("SELECT sector, pim, devengado FROM gasto_sector WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
 @app.get("/api/por-nivel/{year}")
+@ttl_cache
 def por_nivel(year: int):
     return q("SELECT ano AS year, nivel, pia, pim, devengado, girado FROM gasto_nivel WHERE ano=%s", (year,))
 
 
 @app.get("/api/flujo-fases/{year}")
+@ttl_cache
 def flujo(year: int):
     r = q("SELECT pia, pim, certificado, devengado, girado FROM gasto_nacional WHERE ano=%s", (year,))
     if not r:
@@ -143,20 +182,21 @@ def flujo(year: int):
 
 
 @app.get("/api/explorador-funcion-meta/{year}")
+@ttl_cache
 def expl_funcion(year: int):
     return q("SELECT ubigeo, departamento, funcion, nivel, pim, devengado "
              "FROM gasto_meta_funcion WHERE ano=%s", (year,))
 
 
 @app.get("/api/explorador-fuente-meta/{year}")
+@ttl_cache
 def expl_fuente(year: int):
     return q("SELECT ubigeo, departamento, fuente, nivel, pim, devengado "
              "FROM gasto_meta_fuente WHERE ano=%s", (year,))
 
 
-@app.get("/api/cubo")
-def cubo(year: int, dimension: str = "funcion", nivel: str | None = None, departamento: str | None = None):
-    """Cubo OLAP simple: cruza año × dimensión (funcion|fuente) × nivel × departamento (destino META)."""
+@ttl_cache
+def _cubo(year: int, dimension: str, nivel: str | None, departamento: str | None):
     tbl = "gasto_meta_funcion" if dimension == "funcion" else "gasto_meta_fuente"
     col = "funcion" if dimension == "funcion" else "fuente"
     where = ["ano=%s"]
@@ -168,3 +208,12 @@ def cubo(year: int, dimension: str = "funcion", nivel: str | None = None, depart
     sql = (f"SELECT {col} AS clave, SUM(pim) pim, SUM(devengado) devengado "
            f"FROM {tbl} WHERE {' AND '.join(where)} GROUP BY 1 ORDER BY 2 DESC")
     return q(sql, tuple(params))
+
+
+@app.get("/api/cubo")
+def cubo(year: int, response: Response, dimension: str = "funcion",
+         nivel: str | None = None, departamento: str | None = None):
+    """Cubo OLAP simple: cruza año × dimensión (funcion|fuente) × nivel × departamento (destino META)."""
+    rows = _cubo(year, dimension, nivel, departamento)
+    response.headers["Cache-Control"] = CACHE_YEAR
+    return rows
