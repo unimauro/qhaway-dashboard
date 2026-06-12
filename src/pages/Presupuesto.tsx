@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
 import {
-  getMeta, getSerieNacional, getPorNivel, getPorDepartamento,
+  getMeta, getSerieNacional, getPorNivel,
   getPorDistrito, getPorFuncion, getPorSector, getFlujoFases, getGeoJSON, loadJSON,
 } from '../lib/data'
 import type {
@@ -93,17 +93,21 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   const niveles = useAsync<PorNivel[]>(getPorNivel, [])
   const geo = useAsync<unknown>(getGeoJSON, [])
 
+  // Departamento histórico (todos los años 2004-2026, por destino territorial).
+  const deptoHist = useAsync<PorDepartamento[]>(() => loadJSON<PorDepartamento[]>('por-departamento-historico.json'), [])
+
   // Fuentes que dependen del año
   const distrito = useAsync<PorDistrito[]>(() => getPorDistrito(year), [year])
-  const depto = useAsync<PorDepartamento[]>(getPorDepartamento, [])
   const funcion = useAsync<PorFuncion[]>(() => getPorFuncion(year), [year])
   const sector = useAsync<PorSector[]>(() => getPorSector(year), [year])
   const flujo = useAsync<FlujoFases>(() => getFlujoFases(year), [year])
 
-  const yearOpts = useMemo(
-    () => years.map((y) => ({ value: y, label: String(y) })),
-    [years],
-  )
+  // Años disponibles: une los del histórico departamental (2004-2026) con los de meta.
+  const yearOpts = useMemo(() => {
+    const ys = new Set<number>(years)
+    for (const r of deptoHist.data ?? []) ys.add(r.year)
+    return [...ys].sort((a, b) => b - a).map((y) => ({ value: y, label: String(y) }))
+  }, [years, deptoHist.data])
   const faseOpts: { value: FaseMapa; label: string }[] = [
     { value: 'pim', label: 'PIM (asignado vigente)' },
     { value: 'devengado', label: 'Devengado (gastado)' },
@@ -157,7 +161,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
           <MapaPanel
             geo={geo}
             distrito={distrito}
-            depto={depto}
+            depto={deptoHist}
             year={year}
             faseMapa={faseMapa}
             nivel={nivel}
@@ -306,7 +310,8 @@ function MapaPanel({
     }
   } else if (usaDepto && depto.data) {
     modo = 'departamento'
-    const rows = depto.data.filter((r) => r.year === year && (nivel === 'Todos' || r.nivel === nivel))
+    // Histórico departamental por destino (META): filtra solo por año (no tiene desglose por nivel).
+    const rows = depto.data.filter((r) => r.year === year)
     const agg = new Map<string, { pim: number; devengado: number; girado: number; departamento: string }>()
     for (const r of rows) {
       const cur = agg.get(r.ubigeo) ?? { pim: 0, devengado: 0, girado: 0, departamento: r.departamento }
@@ -449,6 +454,15 @@ function SerieTemporal({ serie, oficial, mensual }: {
 
 /* ───────────────────────── 4. Sankey de fases ───────────────────────── */
 
+function DetalleNoDisponible({ year }: { year: number }) {
+  return (
+    <div className="px-4 py-8 text-center text-sm text-ink-400">
+      <Pill tone="neutral">solo años con descarga distrital</Pill>
+      <p className="mt-2">Este desglose está disponible para 2025 (y los años cuyo detalle distrital ya se incorporó). Para {year} aún no — el mapa de arriba sí muestra {year} a nivel territorial.</p>
+    </div>
+  )
+}
+
 function SankeyFases({ flujo, year }: { flujo: ReturnType<typeof useAsync<FlujoFases>>; year: number }) {
   return (
     <Card>
@@ -465,7 +479,7 @@ function SankeyFases({ flujo, year }: { flujo: ReturnType<typeof useAsync<FlujoF
         }
       />
       <div className="px-4 pb-4">
-        {flujo.loading ? <Loading /> : flujo.error ? <ErrorBox error={flujo.error} /> : !flujo.data ? <Loading /> : (
+        {flujo.loading ? <Loading /> : flujo.error ? <DetalleNoDisponible year={year} /> : !flujo.data ? <Loading /> : (
           <SankeyChart f={flujo.data} />
         )}
       </div>
@@ -541,7 +555,7 @@ function TreemapFuncion({ funcion, year }: { funcion: ReturnType<typeof useAsync
         }
       />
       <div className="px-4 pb-4">
-        {funcion.loading ? <Loading /> : funcion.error ? <ErrorBox error={funcion.error} /> : !funcion.data ? <Loading /> : (
+        {funcion.loading ? <Loading /> : funcion.error ? <DetalleNoDisponible year={year} /> : !funcion.data ? <Loading /> : (
           <TreemapChart data={funcion.data} />
         )}
       </div>
@@ -604,7 +618,7 @@ function RankingSector({ sector, year }: { sector: ReturnType<typeof useAsync<Po
         }
       />
       <div className="px-4 pb-4">
-        {sector.loading ? <Loading /> : sector.error ? <ErrorBox error={sector.error} /> : !sector.data ? <Loading /> : (
+        {sector.loading ? <Loading /> : sector.error ? <DetalleNoDisponible year={year} /> : !sector.data ? <Loading /> : (
           <SectorChart data={sector.data} />
         )}
       </div>
