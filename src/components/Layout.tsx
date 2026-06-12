@@ -13,6 +13,7 @@ const NAV = [
   { to: '/riesgos', label: 'Riesgos Territoriales', icon: '◬' },
   { to: '/prosperidad', label: 'Prosperidad (IPT)', icon: '★' },
   { to: '/explorador', label: 'Explorador Multidimensional', icon: '🔍' },
+  { to: '/cobertura', label: 'Cobertura Territorial', icon: '◷' },
   { to: '/metodologia', label: 'Metodología y FAQ', icon: '?' },
 ]
 

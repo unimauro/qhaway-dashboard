@@ -12,6 +12,7 @@ export interface FuenteDato {
 export interface Meta {
   years: number[]
   latestYear: number
+  distritoYear?: number
   lastUpdate: string
   fases: Fase[]
   sources: FuenteDato[]
