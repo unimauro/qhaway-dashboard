@@ -20,7 +20,8 @@ import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 type Tri = 'all' | 'baja' | 'media' | 'alta'
 type IdhSel = 'all' | 'bajo' | 'medio' | 'alto'
 type RiesgoSel = 'all' | 'alto'
-type NivelSel = 'Todos' | 'GOBIERNO LOCAL' | 'GOBIERNO REGIONAL' | 'GOBIERNO NACIONAL'
+// OJO: los valores deben coincidir EXACTO con r.nivel de la data (plural en locales/regionales).
+type NivelSel = 'Todos' | 'GOBIERNOS LOCALES' | 'GOBIERNOS REGIONALES' | 'GOBIERNO NACIONAL'
 
 interface Filtros {
   pobreza: Tri
@@ -37,7 +38,7 @@ const FILTROS_INICIALES: Filtros = {
   piso: 'all',
   perCapita: 'all',
   riesgoClim: 'all',
-  nivel: 'GOBIERNO LOCAL',
+  nivel: 'GOBIERNOS LOCALES',
 }
 
 // Umbrales fijos y transparentes para pobreza e IDH (los per cápita van por terciles)
@@ -383,7 +384,9 @@ export default function Cubo() {
   if (distQ.error) return <ErrorBox error={`No se pudo cargar el presupuesto distrital ${year}: ${distQ.error}`} />
   if (!geoQ.data || !indQ.data || !riesgoQ.data || !distQ.data) return <Loading />
 
-  const yearOpts = (metaQ.data?.years?.length ? metaQ.data.years : [2025]).map((y) => ({ value: y, label: String(y) }))
+  // Solo años con detalle distrital (los demás darían 0 en el cruce).
+  const distYears = metaQ.data?.distritoYears?.length ? metaQ.data.distritoYears : [2025]
+  const yearOpts = [...distYears].sort((a, b) => b - a).map((y) => ({ value: y, label: String(y) }))
   const pisoOpts = [{ value: 'all', label: 'Indiferente' }, ...TODOS_PISOS.map((p) => ({ value: p.id, label: p.nombre }))]
   const ficha = cubo.find((c) => c.ubigeo === seleccionado)
 
@@ -509,8 +512,8 @@ export default function Cubo() {
             value={filtros.nivel}
             onChange={(v) => set('nivel', v as NivelSel)}
             options={[
-              { value: 'GOBIERNO LOCAL', label: 'Gobiernos locales (recomendado)' },
-              { value: 'GOBIERNO REGIONAL', label: 'Gobiernos regionales' },
+              { value: 'GOBIERNOS LOCALES', label: 'Gobiernos locales (recomendado)' },
+              { value: 'GOBIERNOS REGIONALES', label: 'Gobiernos regionales' },
               { value: 'GOBIERNO NACIONAL', label: 'Gobierno nacional' },
               { value: 'Todos', label: 'Todos los niveles' },
             ]}

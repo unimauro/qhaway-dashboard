@@ -13,6 +13,7 @@ export interface Meta {
   years: number[]
   latestYear: number
   distritoYear?: number
+  distritoYears?: number[]  // años con detalle distrital cargado (API VPS)
   lastUpdate: string
   fases: Fase[]
   sources: FuenteDato[]

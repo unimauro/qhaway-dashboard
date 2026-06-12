@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
 import {
-  getMeta, getSerieNacional, getPorNivel,
+  getMeta, getSerieNacional, getPorNivelYear,
   getPorDistrito, getPorFuncion, getPorSector, getFlujoFases, getGeoJSON, loadJSON,
 } from '../lib/data'
 import type {
@@ -16,6 +16,7 @@ import {
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
+import YearStrip from '../components/YearStrip'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
 type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
@@ -44,11 +45,11 @@ function toneEjec(frac: number): 'good' | 'warn' | 'neutral' {
 }
 
 /** Lee el año inicial del hash (#/presupuesto?y=2025) si está presente. */
-function yearFromHash(years: number[]): number | undefined {
+function yearFromHash(): number | undefined {
   const m = /[?&]y=(\d{4})/.exec(window.location.hash)
   if (m) {
     const y = Number(m[1])
-    if (years.includes(y)) return y
+    if (y >= 2000 && y <= 2100) return y
   }
   return undefined
 }
@@ -70,7 +71,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   )
 
   const [year, setYear] = useState<number>(
-    yearFromHash(years) ?? meta.latestYear ?? years[0],
+    yearFromHash() ?? meta.latestYear ?? years[0],
   )
   const [faseMapa, setFaseMapa] = useState<FaseMapa>('pim')
   const [nivel, setNivel] = useState<Nivel>('Todos')
@@ -90,7 +91,6 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   const serie = useAsync<SerieNacional[]>(getSerieNacional, [])
   const oficial = useAsync<SerieNacional[]>(() => loadJSON<SerieNacional[]>('serie-historica-oficial.json'), [])
   const mensual = useAsync<PuntoMensual[]>(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
-  const niveles = useAsync<PorNivel[]>(getPorNivel, [])
   const geo = useAsync<unknown>(getGeoJSON, [])
 
   // Departamento histórico (todos los años 2004-2026, por destino territorial).
@@ -101,6 +101,8 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   const funcion = useAsync<PorFuncion[]>(() => getPorFuncion(year), [year])
   const sector = useAsync<PorSector[]>(() => getPorSector(year), [year])
   const flujo = useAsync<FlujoFases>(() => getFlujoFases(year), [year])
+  // Desglose por nivel para el año (API, 2024-2025). Para el total "Todos" usamos la serie.
+  const nivelYear = useAsync<PorNivel[]>(() => getPorNivelYear(year), [year])
 
   // Años disponibles: une los del histórico departamental (2004-2026) con los de meta.
   const yearOpts = useMemo(() => {
@@ -127,7 +129,9 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       {/* Controles sticky */}
       <div className="sticky top-0 z-30 -mx-2 px-2 py-2 backdrop-blur bg-white/80 dark:bg-ink-950/80 border-b border-ink-200 dark:border-ink-800 rounded-b-xl">
         <div className="flex flex-wrap items-center gap-3">
-          <Select<number> value={year} onChange={setYear} options={yearOpts} label="Año" />
+          <YearStrip years={yearOpts.map((o) => o.value)} value={year} onChange={setYear} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 mt-2">
           <Select<FaseMapa> value={faseMapa} onChange={setFaseMapa} options={faseOpts} label="Fase a mapear" />
           <Select<Nivel> value={nivel} onChange={setNivel} options={NIVEL_OPTS} label="Nivel de gobierno" />
           <span className="ml-auto text-[11px] text-ink-400">
@@ -137,7 +141,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       </div>
 
       {/* 1. KPIs */}
-      <KpisAnio niveles={niveles} year={year} nivel={nivel} />
+      <KpisAnio serie={oficial.data ?? serie.data ?? []} nivelYear={nivelYear} year={year} nivel={nivel} />
 
       {/* 2. Mapa + panel de detalle */}
       <Card>
@@ -199,25 +203,56 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
 
 /* ───────────────────────── 1. KPIs ───────────────────────── */
 
-function sumarNivel(rows: PorNivel[], year: number, nivel: Nivel) {
-  const f = rows.filter((r) => r.year === year && (nivel === 'Todos' || r.nivel === nivel))
-  return f.reduce(
+type Totales = { pia: number; pim: number; devengado: number; girado: number }
+const ZERO: Totales = { pia: 0, pim: 0, devengado: 0, girado: 0 }
+
+function sumarNivel(rows: PorNivel[], nivel: Nivel): Totales {
+  const f = rows.filter((r) => nivel === 'Todos' || r.nivel === nivel)
+  return f.reduce<Totales>(
     (a, r) => ({
       pia: a.pia + (r.pia || 0),
       pim: a.pim + (r.pim || 0),
       devengado: a.devengado + (r.devengado || 0),
       girado: a.girado + (r.girado || 0),
     }),
-    { pia: 0, pim: 0, devengado: 0, girado: 0 },
+    { ...ZERO },
   )
 }
 
-function KpisAnio({ niveles, year, nivel }: { niveles: ReturnType<typeof useAsync<PorNivel[]>>; year: number; nivel: Nivel }) {
-  if (niveles.loading) return <Loading label="Cargando agregados por nivel…" />
-  if (niveles.error) return <ErrorBox error={niveles.error} />
-  if (!niveles.data) return <Loading />
+function KpisAnio({
+  serie, nivelYear, year, nivel,
+}: {
+  serie: SerieNacional[]
+  nivelYear: ReturnType<typeof useAsync<PorNivel[]>>
+  year: number
+  nivel: Nivel
+}) {
+  // "Todos los niveles" → total nacional de la serie (cubre los 22 años).
+  // Un nivel específico → desglose de la API por año (2024-2025).
+  let t: Totales = ZERO
+  let disponible = false
+  let aviso: string | null = null
 
-  const t = sumarNivel(niveles.data, year, nivel)
+  if (nivel === 'Todos') {
+    const row = serie.find((r) => r.year === year)
+    if (row) {
+      t = { pia: row.pia || 0, pim: row.pim || 0, devengado: row.devengado || 0, girado: row.girado || 0 }
+      disponible = true
+    } else {
+      aviso = `No hay serie nacional para ${year}.`
+    }
+  } else {
+    if (nivelYear.loading) return <Loading label="Cargando desglose por nivel…" />
+    const rows = (nivelYear.data ?? []).filter((r) => r.year === year || r.year === undefined)
+    if (rows.length > 0 && !nivelYear.error) {
+      t = sumarNivel(rows, nivel)
+      disponible = t.pim > 0
+    }
+    if (!disponible) {
+      aviso = `El desglose por nivel de gobierno está disponible para los años con detalle distrital (2024–2025). Para ${year}, usa “Todos los niveles”.`
+    }
+  }
+
   const frac = ejecucion(t.devengado, t.pim)
 
   return (
@@ -233,6 +268,9 @@ function KpisAnio({ niveles, year, nivel }: { niveles: ReturnType<typeof useAsyn
           (rojo &lt;50%, ámbar 50–80%, verde &gt;80%).
         </HelpTip>
       </div>
+      {aviso && (
+        <p className="mb-2 text-xs"><Pill tone="warn">sin desglose</Pill> <span className="text-ink-400">{aviso}</span></p>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
         <KPI label="PIA" value={solesCompact(t.pia)} sub="Inicial de apertura" />
         <KPI label="PIM" value={solesCompact(t.pim)} sub="Modificado / vigente" accent />

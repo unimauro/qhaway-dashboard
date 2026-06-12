@@ -22,6 +22,7 @@ import {
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import YearStrip from '../components/YearStrip'
 import { soles, solesCompact, num, pct } from '../lib/format'
 
 interface PisoFeature {
@@ -56,10 +57,17 @@ export default function Pisos() {
     [],
   )
 
-  const latestYear = metaRes.data?.latestYear
+  // Años CON detalle distrital (los únicos que sirven para la equidad presupuesto-población).
+  // OJO: NO usar latestYear (puede ser 2026, que aún no tiene detalle distrital).
+  const distYears = useMemo(() => {
+    const ys = metaRes.data?.distritoYears
+    return ys?.length ? [...ys].sort((a, b) => b - a) : [2025]
+  }, [metaRes.data])
+  const [yearSel, setYearSel] = useState<number | undefined>(undefined)
+  const year = yearSel ?? distYears[0]
   const distRes = useAsync<PorDistrito[]>(
-    () => (latestYear ? getPorDistrito(latestYear) : Promise.resolve([])),
-    [latestYear],
+    () => (year ? getPorDistrito(year) : Promise.resolve([])),
+    [year],
   )
 
   // Población base elegida por el usuario (escala del per cápita legible).
@@ -359,7 +367,7 @@ export default function Pisos() {
             cápita sea legible, elige una <strong>población base de referencia</strong> y
             expresamos el presupuesto como <strong>S/ {baseLabel}</strong>.
           </p>
-          <div className="pt-1">
+          <div className="pt-1 flex flex-wrap items-center gap-4">
             <Select
               label="Población base:"
               value={base}
@@ -369,6 +377,9 @@ export default function Pisos() {
                 label: b.label.replace('por cada ', ''),
               }))}
             />
+            <div className="min-w-[180px] flex-1">
+              <YearStrip years={distYears} value={year} onChange={setYearSel} label="Año presup." />
+            </div>
           </div>
           <p className="text-xs text-zinc-500">
             Fuentes: altitud y población distritales (INEI / SIAF-MEF). La clasificación
@@ -428,19 +439,19 @@ export default function Pisos() {
               sub={
                 kpi.costa.perCapita !== null && kpi.altoandino.perCapita !== null
                   ? `${(kpi.altoandino.perCapita / kpi.costa.perCapita).toFixed(2)}× vs costa (Chala)`
-                  : `Año ${latestYear ?? ''}`
+                  : `Año ${year}`
               }
               accent
             />
             <KPI
               label={`PIM per cápita costa (Chala) · ${baseLabel}`}
               value={kpi.costa.perCapita !== null ? soles(kpi.costa.perCapita * base) : 's/d'}
-              sub={`Año ${latestYear ?? ''}`}
+              sub={`Año ${year}`}
             />
             <KPI
               label={`PIM per cápita amazónico (Selva Alta + Baja) · ${baseLabel}`}
               value={kpi.selva.perCapita !== null ? soles(kpi.selva.perCapita * base) : 's/d'}
-              sub={`Año ${latestYear ?? ''}`}
+              sub={`Año ${year}`}
             />
           </div>
           <Card>
@@ -462,7 +473,7 @@ export default function Pisos() {
           <Card>
             <CardHeader
               title="Equidad: % de población vs % de presupuesto por piso"
-              subtitle={`Población (INEI) vs PIM ${latestYear ?? ''}`}
+              subtitle={`Población (INEI) vs PIM ${year}`}
               right={<Pill tone="warn">comparativo</Pill>}
               help={
                 <HelpTip>
@@ -483,7 +494,7 @@ export default function Pisos() {
           <Card>
             <CardHeader
               title="Presupuesto y población por piso: el cruce completo"
-              subtitle={`Año ${latestYear ?? ''}`}
+              subtitle={`Año ${year}`}
               right={<Pill tone="warn">piso por altitud de capital</Pill>}
               help={
                 <HelpTip>

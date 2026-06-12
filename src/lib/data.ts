@@ -22,6 +22,7 @@ function apiEndpoint(path: string): string | null {
   if ((m = path.match(/^por-distrito-(\d{4})\.json$/))) return `por-distrito/${m[1]}`
   if ((m = path.match(/^por-funcion-(\d{4})\.json$/))) return `por-funcion/${m[1]}`
   if ((m = path.match(/^por-sector-(\d{4})\.json$/))) return `por-sector/${m[1]}`
+  if ((m = path.match(/^por-nivel-(\d{4})\.json$/))) return `por-nivel/${m[1]}`
   if ((m = path.match(/^flujo-fases-(\d{4})\.json$/))) return `flujo-fases/${m[1]}`
   if ((m = path.match(/^explorador-funcion-meta-(\d{4})\.json$/))) return `explorador-funcion-meta/${m[1]}`
   if ((m = path.match(/^explorador-fuente-meta-(\d{4})\.json$/))) return `explorador-fuente-meta/${m[1]}`
@@ -75,9 +76,35 @@ export async function loadText(path: string): Promise<string> {
 }
 
 // Helpers tipados
-export const getMeta = () => loadJSON<Meta>('meta.json')
+// getMeta combina el meta estático (sources/notas/fases — no están en la API) con el
+// meta VIVO de la API (years, distritoYears, lastUpdate), que se actualiza solo conforme
+// la migración carga años. Si la API está caída, usa solo el estático.
+export async function getMeta(): Promise<Meta> {
+  if (cache.has('__meta_merged')) return cache.get('__meta_merged') as Meta
+  const stat = await loadJSON<Meta>('meta.json')
+  let merged = stat
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/meta`, API_TIMEOUT_MS)
+    if (res.ok) {
+      const live = (await res.json()) as Partial<Meta>
+      merged = {
+        ...stat,
+        years: live.years?.length ? live.years : stat.years,
+        latestYear: live.latestYear ?? stat.latestYear,
+        distritoYears: live.distritoYears ?? stat.distritoYears,
+        lastUpdate: live.lastUpdate ?? stat.lastUpdate,
+      }
+    }
+  } catch {
+    /* API caída → solo estático */
+  }
+  cache.set('__meta_merged', merged)
+  return merged
+}
 export const getSerieNacional = () => loadJSON<SerieNacional[]>('serie-nacional.json')
 export const getPorNivel = () => loadJSON<PorNivel[]>('por-nivel-gobierno.json')
+// Desglose por nivel de gobierno para un año concreto (API por-nivel/{año}; 2024-2025).
+export const getPorNivelYear = (year: number) => loadJSON<PorNivel[]>(`por-nivel-${year}.json`)
 export const getPorDepartamento = () => loadJSON<PorDepartamento[]>('por-departamento.json')
 export const getPorDistrito = (year: number) => loadJSON<PorDistrito[]>(`por-distrito-${year}.json`)
 export const getPorFuncion = (year: number) => loadJSON<PorFuncion[]>(`por-funcion-${year}.json`)
