@@ -127,8 +127,12 @@ def load_year(conn, year, agg):
                          for (ub, niv), a in agg["dist"].items()])
         cur.executemany("INSERT INTO gasto_funcion VALUES (%s,%s,%s,%s,%s)",
                         [(year, k, rnd(v[1]), rnd(v[3]), rnd(v[4])) for k, v in agg["func"].items() if k != "—"])
+        # Las municipalidades (gobiernos locales) no tienen SECTOR en el SIAF → caen en "—".
+        # No las descartamos: las agrupamos como pseudo-sector "GOBIERNOS LOCALES" para que el
+        # corte por sector reconcilie con el total nacional (de lo contrario faltaría el gasto local).
         cur.executemany("INSERT INTO gasto_sector VALUES (%s,%s,%s,%s)",
-                        [(year, k, rnd(v[1]), rnd(v[3])) for k, v in agg["sect"].items() if k != "—"])
+                        [(year, ("GOBIERNOS LOCALES" if k == "—" else k), rnd(v[1]), rnd(v[3]))
+                         for k, v in agg["sect"].items()])
         cur.executemany("INSERT INTO gasto_nivel VALUES (%s,%s,%s,%s,%s,%s)",
                         [(year, k, rnd(v[0]), rnd(v[1]), rnd(v[3]), rnd(v[4])) for k, v in agg["nivg"].items()])
         cur.executemany("INSERT INTO gasto_meta_funcion VALUES (%s,%s,%s,%s,%s,%s,%s)",

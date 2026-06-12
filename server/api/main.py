@@ -71,13 +71,14 @@ _cache: dict = {}
 
 def ttl_cache(fn):
     @functools.wraps(fn)
-    def wrap(*args):
-        key = (fn.__name__, args)
+    def wrap(*args, **kwargs):
+        # FastAPI pasa los path params como keyword args → la clave debe incluirlos.
+        key = (fn.__name__, args, tuple(sorted(kwargs.items())))
         hit = _cache.get(key)
         now = time.time()
         if hit and hit[0] > now:
             return hit[1]
-        val = fn(*args)
+        val = fn(*args, **kwargs)
         if val:  # no cachear vacíos/None → reintenta hasta que la migración cargue el año
             _cache[key] = (now + CACHE_TTL, val)
         return val
