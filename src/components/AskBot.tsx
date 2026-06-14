@@ -17,11 +17,18 @@ import { clasificarPiso } from '../lib/pisos'
 import { soles, solesCompact, pct, ejecucion } from '../lib/format'
 
 // ────────────────────────────────────────────────────────────────────────────
-// <AskBot/> — Asistente IA conversacional flotante del observatorio QHAWAY.
-// Modo guiado (sin backend, sin API key) + modo IA conectada opcional (Gemini).
-// Autocontenido y robusto: nunca rompe si faltan datos.
+// <AskBot/> — "Ninacha" 🔥, la asistente IA del observatorio QHAWAY.
+// (nina = fuego en quechua: el fueguito que ilumina los números públicos)
+// Motor HÍBRIDO y barato:
+//   1) Reglas en el cliente para consultas estructuradas (depto/sector/función/
+//      distrito/glosario) → responde consultando datos ya cargados. COSTO $0.
+//   2) Solo si las reglas no entienden, deriva a la IA. Por defecto vía el VPS
+//      (/api/ninacha → OpenRouter modelo gratuito, con la key OCULTA en el server);
+//      o, si el usuario pega su propia key de Gemini, usa esa. Fallback siempre al
+//      modo guiado. Nunca rompe si faltan datos.
 // ────────────────────────────────────────────────────────────────────────────
 
+const NINACHA_API = 'https://qhaway.tunky.net/api/ninacha'
 const LS_KEY = 'qhaway-gemini-key'
 const MAX_HISTORIAL = 40
 
@@ -111,8 +118,8 @@ export default function AskBot() {
       id: nextId(),
       rol: 'bot',
       texto:
-        '¡Hola! Soy el asistente de QHAWAY. Puedo explicarte cómo leer el dashboard y buscar cifras por departamento, sector, función o distrito. Escribe un nombre (ej. "Cusco") o usa los atajos de abajo.',
-      nota: 'modo guiado',
+        '¡Hola! Soy Ninacha 🔥, tu asistente en QHAWAY. Te explico cómo leer el dashboard y busco cifras por departamento, sector, función o distrito. Escribe un nombre (ej. "Cusco") o usa los atajos de abajo.',
+      nota: 'Ninacha',
     },
   ])
 
@@ -187,7 +194,7 @@ export default function AskBot() {
 
   // ── Lógica de respuesta en modo guiado ────────────────────────────────────
   const responderGuiado = useCallback(
-    (consulta: string): Omit<Mensaje, 'id' | 'rol'> => {
+    (consulta: string): Omit<Mensaje, 'id' | 'rol'> & { confident?: boolean } => {
       const q = norm(consulta)
 
       // 1) Chips / preguntas frecuentes (match por palabras clave).
@@ -250,12 +257,13 @@ export default function AskBot() {
         if (dist) return dist
       }
 
-      // 4) Fallback amable.
+      // 4) No entendí con reglas → marca no-confiado para derivar a la IA.
       return {
         texto:
-          'No estoy seguro de haber entendido. Puedo: explicar cómo leer el mapa, definir términos (PIM, devengado, ubigeo, IPT) o buscar cifras escribiendo un departamento, sector o distrito. También puedes conectar una API key de Gemini en ⚙ para respuestas libres.',
+          'No estoy segura de haber entendido. Puedo explicar cómo leer el mapa, definir términos (PIM, devengado, ubigeo, IPT) o buscar cifras escribiendo un departamento, sector o distrito.',
         links: [LINKS.presupuesto, LINKS.prosperidad, LINKS.pisos, LINKS.metodologia],
-        nota: 'modo guiado',
+        nota: 'Ninacha · modo guiado',
+        confident: false,
       }
     },
     [datos],
@@ -303,31 +311,33 @@ export default function AskBot() {
         [...prev, { id: nextId(), rol: 'user' as Rol, texto }].slice(-MAX_HISTORIAL),
       )
 
-      // Si hay API key → IA conectada (Gemini), con fallback a modo guiado ante error.
-      if (apiKey) {
-        setPensando(true)
-        try {
-          const respuesta = await preguntarGemini(texto, apiKey, datos)
-          pushBot({ texto: respuesta, nota: 'IA conectada', links: linksSugeridos(texto) })
-        } catch (e) {
-          const fb = responderGuiado(texto)
-          pushBot({
-            ...fb,
-            nota: 'modo guiado (IA no disponible)',
-            texto:
-              'No pude conectar con la IA (' +
-              (e instanceof Error ? e.message : 'error') +
-              '). Respondo en modo guiado:\n\n' +
-              fb.texto,
-          })
-        } finally {
-          setPensando(false)
-        }
+      // 1) Reglas primero (COSTO $0). Si responde con confianza, listo.
+      const { confident, ...guiadoMsg } = responderGuiado(texto)
+      if (confident !== false) {
+        pushBot(guiadoMsg)
         return
       }
 
-      // Modo guiado (sin key).
-      pushBot(responderGuiado(texto))
+      // 2) Las reglas no entendieron → IA. Si el usuario puso su key de Gemini, la usa;
+      //    si no, deriva a Ninacha en el VPS (OpenRouter gratis, key oculta). Fallback al modo guiado.
+      setPensando(true)
+      try {
+        const respuesta = apiKey
+          ? await preguntarGemini(texto, apiKey, datos)
+          : await preguntarNinacha(texto, datos)
+        pushBot({ texto: respuesta, nota: apiKey ? 'Ninacha · Gemini' : 'Ninacha · IA', links: linksSugeridos(texto) })
+      } catch (e) {
+        pushBot({
+          ...guiadoMsg,
+          nota: 'Ninacha · modo guiado',
+          texto:
+            (apiKey
+              ? 'No pude conectar con la IA (' + (e instanceof Error ? e.message : 'error') + '). '
+              : '') + guiadoMsg.texto,
+        })
+      } finally {
+        setPensando(false)
+      }
     },
     [apiKey, datos, pensando, pushBot, responderGuiado],
   )
@@ -357,7 +367,7 @@ export default function AskBot() {
       {!abierto && (
         <button
           onClick={() => setAbierto(true)}
-          aria-label="Abrir asistente QHAWAY"
+          aria-label="Abrir a Ninacha, asistente de QHAWAY"
           className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg shadow-brand-900/30 transition hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-300"
         >
           <ChatIcon className="h-6 w-6" />
@@ -371,9 +381,9 @@ export default function AskBot() {
           <div className="flex items-center gap-2 border-b border-ink-200 bg-brand-600 px-3 py-2.5 text-white dark:border-ink-800">
             <ChatIcon className="h-5 w-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold leading-tight">Asistente QHAWAY</div>
+              <div className="truncate text-sm font-semibold leading-tight">Ninacha 🔥</div>
               <div className="text-[11px] leading-tight text-brand-100">
-                {apiKey ? 'IA conectada (Gemini)' : 'Modo guiado · capacidades limitadas'}
+                {apiKey ? 'IA · Gemini (tu key)' : 'Asistente IA de QHAWAY'}
               </div>
             </div>
             <button
@@ -660,6 +670,30 @@ function resumenContexto(d: Datos | null): string {
   }
   lineas.push(`Indicadores distritales cargados: ${d.indicadores.length} distritos (IDH, pobreza, altitud).`)
   return lineas.join('\n')
+}
+
+// Ninacha vía VPS: el servidor llama a OpenRouter (modelo gratuito) con la key OCULTA.
+// El cliente solo envía la pregunta + un resumen del contexto de datos. Costo $0.
+async function preguntarNinacha(pregunta: string, d: Datos | null): Promise<string> {
+  const res = await fetch(NINACHA_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pregunta, contexto: resumenContexto(d) }),
+  })
+  if (!res.ok) {
+    let detalle = `HTTP ${res.status}`
+    try {
+      const j = await res.json()
+      if (j?.detail) detalle = j.detail
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detalle)
+  }
+  const data = await res.json()
+  const texto: string = (data?.texto || '').trim()
+  if (!texto) throw new Error('respuesta vacía')
+  return texto
 }
 
 async function preguntarGemini(pregunta: string, key: string, d: Datos | null): Promise<string> {

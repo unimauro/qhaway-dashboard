@@ -9,6 +9,7 @@ from collections import deque
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
 import psycopg
 from psycopg.rows import dict_row
 
@@ -17,12 +18,15 @@ ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if 
 API_KEY = os.environ.get("QHAWAY_API_KEY", "").strip()      # gate de consumo (header X-API-Key)
 RATE_MAX = int(os.environ.get("RATE_MAX", "120"))            # req por ventana
 RATE_WINDOW = int(os.environ.get("RATE_WINDOW", "60"))       # segundos
+# Ninacha (IA): key OCULTA en el servidor; el cliente nunca la ve. Modelo gratuito de OpenRouter.
+OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY", "").strip()
+OR_MODEL = os.environ.get("OR_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 
 app = FastAPI(title="QHAWAY API", version="1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS or ["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*", "X-API-Key"],
 )
 
@@ -218,3 +222,53 @@ def cubo(year: int, response: Response, dimension: str = "funcion",
     rows = _cubo(year, dimension, nivel, departamento)
     response.headers["Cache-Control"] = CACHE_YEAR
     return rows
+
+
+# --- Ninacha 🔥: asistente IA (proxy a OpenRouter, key oculta en el servidor) ---
+NINACHA_SYSTEM = (
+    "Eres Ninacha, la asistente del observatorio ciudadano QHAWAY sobre el presupuesto público "
+    "del Perú (datos reales SIAF-MEF) e indicadores territoriales distritales. Responde SOLO sobre "
+    "QHAWAY y presupuesto/territorio del Perú; si te preguntan otra cosa, redirige con amabilidad. "
+    "Sé concisa (máx ~5 frases), en español del Perú, cálida y clara. Cita cifras SOLO si están en el "
+    "CONTEXTO; nunca inventes datos. Sugiere qué sección revisar (Presupuesto, Pisos Altitudinales, "
+    "Riesgos, Prosperidad, Cambio Climático, Explorador, Cubo o Metodología)."
+)
+
+
+@app.post("/api/ninacha")
+async def ninacha(payload: dict):
+    """Ninacha — IA del observatorio. El servidor llama a OpenRouter con la key oculta; el cliente
+    solo envía la pregunta y un resumen del contexto de datos. Guardrails + anti-overclaiming."""
+    if not OPENROUTER_KEY:
+        raise HTTPException(503, "Ninacha (IA) aún no está configurada en el servidor")
+    pregunta = str(payload.get("pregunta") or "").strip()[:1000]
+    contexto = str(payload.get("contexto") or "")[:4000]
+    if not pregunta:
+        raise HTTPException(400, "Falta la pregunta")
+    body = {
+        "model": OR_MODEL,
+        "messages": [
+            {"role": "system", "content": NINACHA_SYSTEM + "\n\nCONTEXTO DE DATOS:\n" + contexto},
+            {"role": "user", "content": pregunta},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 500,
+    }
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://unimauro.github.io/qhaway-dashboard/",
+        "X-Title": "QHAWAY Ninacha",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            r = await client.post("https://openrouter.ai/api/v1/chat/completions",
+                                  json=body, headers=headers)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Error conectando con la IA: {type(e).__name__}")
+    if r.status_code != 200:
+        raise HTTPException(502, f"IA no disponible (OpenRouter {r.status_code})")
+    texto = (r.json().get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+    if not texto:
+        raise HTTPException(502, "La IA devolvió una respuesta vacía")
+    return {"texto": texto, "modelo": OR_MODEL}
