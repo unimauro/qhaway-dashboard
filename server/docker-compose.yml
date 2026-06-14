@@ -35,6 +35,9 @@ services:
       # Orígenes permitidos (CORS). El dashboard de GitHub Pages + dev local.
       CORS_ORIGINS: "https://unimauro.github.io,http://localhost:5173,https://qhaway.tunky.net"
       QHAWAY_API_KEY: ${QHAWAY_API_KEY:-}
+      # Ninacha (IA): key de OpenRouter OCULTA en el server (desde .env, no se commitea).
+      OPENROUTER_KEY: ${OPENROUTER_KEY:-}
+      OR_MODEL: ${OR_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
       RATE_MAX: "120"
       RATE_WINDOW: "60"
     ports:
