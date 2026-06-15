@@ -22,7 +22,37 @@ RATE_WINDOW = int(os.environ.get("RATE_WINDOW", "60"))       # segundos
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY", "").strip()
 OR_MODEL = os.environ.get("OR_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 
-app = FastAPI(title="QHAWAY API", version="1.0")
+API_DESC = """
+**API pública del Observatorio QHAWAY** — presupuesto público del Perú (SIAF-MEF) e
+inteligencia territorial distrital, como **datos abiertos** para investigación y reutilización.
+
+- **Fuente:** MEF — Consulta del Gasto / Datos Abiertos (SIAF), cargada en PostgreSQL propio.
+- **Cobertura:** serie nacional y regional 2004-2026; detalle distrital por año (en expansión).
+- **Atribución territorial:** por *destino* (META, a nivel departamento) y por *ejecutora* (distrito).
+- **Licencia:** datos bajo CC BY 4.0. Cita: «Observatorio QHAWAY (FIEECS-UNI), a partir de SIAF-MEF».
+- **Uso justo:** la API es de solo lectura, con límite de tasa por IP. Si necesitas volúmenes grandes,
+  descarga los JSON o escríbenos.
+
+Cualquiera puede construir sobre estos datos: esta documentación interactiva (OpenAPI) es,
+en sí misma, un entregable académico del observatorio.
+"""
+
+TAGS = [
+    {"name": "Sistema", "description": "Estado del servicio y metadatos."},
+    {"name": "Presupuesto", "description": "Series y agregados del gasto público (PIA/PIM/Devengado/Girado)."},
+    {"name": "Territorio", "description": "Detalle por distrito (ejecutora) y por destino territorial (META)."},
+    {"name": "OLAP", "description": "Cubo: cruces arbitrarios año × dimensión × nivel × territorio."},
+    {"name": "IA", "description": "Ninacha, asistente del observatorio."},
+]
+
+app = FastAPI(
+    title="QHAWAY API",
+    version="1.1",
+    description=API_DESC,
+    openapi_tags=TAGS,
+    contact={"name": "Observatorio QHAWAY · FIEECS-UNI", "url": "https://unimauro.github.io/qhaway-dashboard/"},
+    license_info={"name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/"},
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS or ["*"],
@@ -95,20 +125,26 @@ CACHE_YEAR = "public, max-age=86400, stale-while-revalidate=604800"
 CACHE_META = "public, max-age=60"
 
 
-@app.get("/")
+@app.get("/", tags=["Sistema"], summary="Índice de la API")
 def root():
     return {
         "api": "QHAWAY — Observatorio del Presupuesto Público del Perú",
         "estado": "ok",
+        "docs": "https://qhaway.tunky.net/docs",
+        "redoc": "https://qhaway.tunky.net/redoc",
+        "openapi": "https://qhaway.tunky.net/openapi.json",
         "endpoints": ["/health", "/api/meta", "/api/serie-nacional", "/api/por-distrito/{año}",
-                      "/api/por-funcion/{año}", "/api/por-sector/{año}", "/api/por-departamento-historico",
-                      "/api/explorador-funcion-meta/{año}", "/api/cubo?year=&dimension=&nivel=&departamento="],
+                      "/api/por-funcion/{año}", "/api/por-sector/{año}", "/api/por-nivel/{año}",
+                      "/api/flujo-fases/{año}", "/api/por-departamento-historico",
+                      "/api/explorador-funcion-meta/{año}", "/api/explorador-fuente-meta/{año}",
+                      "/api/cubo?year=&dimension=&nivel=&departamento="],
         "dashboard": "https://unimauro.github.io/qhaway-dashboard/",
         "fuente": "MEF — Consulta del Gasto (datos abiertos), cargado en PostgreSQL propio (FIEECS-UNI).",
+        "licencia": "CC BY 4.0",
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["Sistema"], summary="Salud del servicio y la base de datos")
 def health():
     try:
         q("SELECT 1 AS ok")
@@ -117,7 +153,7 @@ def health():
         raise HTTPException(503, f"db: {e}")
 
 
-@app.get("/api/meta")
+@app.get("/api/meta", tags=["Sistema"], summary="Años disponibles, último corte y fases")
 def meta():
     years = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_nacional ORDER BY ano")]
     dyears = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_distrito ORDER BY ano DESC")]
@@ -131,13 +167,14 @@ def meta():
     }
 
 
-@app.get("/api/serie-nacional")
+@app.get("/api/serie-nacional", tags=["Presupuesto"], summary="Serie nacional anual (2004-2026)")
 @ttl_cache
 def serie_nacional():
     return q("SELECT ano AS year, pia, pim, certificado, devengado, girado FROM gasto_nacional ORDER BY ano")
 
 
-@app.get("/api/por-departamento-historico")
+@app.get("/api/por-departamento-historico", tags=["Presupuesto"],
+         summary="Serie por departamento de destino (META), 2004-2026")
 @ttl_cache
 def depto_hist():
     return q("SELECT ano AS year, ubigeo, departamento, pia, pim, certificado, devengado, girado "
@@ -150,7 +187,8 @@ def _por_distrito(year: int):
              "FROM gasto_distrito WHERE ano=%s", (year,))
 
 
-@app.get("/api/por-distrito/{year}")
+@app.get("/api/por-distrito/{year}", tags=["Territorio"],
+         summary="Detalle distrital por ejecutora (PIM/devengado por ubigeo)")
 def por_distrito(year: int, response: Response):
     rows = _por_distrito(year)
     if not rows:
@@ -159,25 +197,25 @@ def por_distrito(year: int, response: Response):
     return rows
 
 
-@app.get("/api/por-funcion/{year}")
+@app.get("/api/por-funcion/{year}", tags=["Presupuesto"], summary="Gasto por función (año)")
 @ttl_cache
 def por_funcion(year: int):
     return q("SELECT funcion, pim, devengado, girado FROM gasto_funcion WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
-@app.get("/api/por-sector/{year}")
+@app.get("/api/por-sector/{year}", tags=["Presupuesto"], summary="Gasto por sector (año)")
 @ttl_cache
 def por_sector(year: int):
     return q("SELECT sector, pim, devengado FROM gasto_sector WHERE ano=%s ORDER BY pim DESC", (year,))
 
 
-@app.get("/api/por-nivel/{year}")
+@app.get("/api/por-nivel/{year}", tags=["Presupuesto"], summary="Gasto por nivel de gobierno (año)")
 @ttl_cache
 def por_nivel(year: int):
     return q("SELECT ano AS year, nivel, pia, pim, devengado, girado FROM gasto_nivel WHERE ano=%s", (year,))
 
 
-@app.get("/api/flujo-fases/{year}")
+@app.get("/api/flujo-fases/{year}", tags=["Presupuesto"], summary="Fases del gasto (PIA→PIM→…→Girado)")
 @ttl_cache
 def flujo(year: int):
     r = q("SELECT pia, pim, certificado, devengado, girado FROM gasto_nacional WHERE ano=%s", (year,))
@@ -186,14 +224,16 @@ def flujo(year: int):
     return r[0]
 
 
-@app.get("/api/explorador-funcion-meta/{year}")
+@app.get("/api/explorador-funcion-meta/{year}", tags=["Territorio"],
+         summary="Función × departamento de destino (META) × nivel")
 @ttl_cache
 def expl_funcion(year: int):
     return q("SELECT ubigeo, departamento, funcion, nivel, pim, devengado "
              "FROM gasto_meta_funcion WHERE ano=%s", (year,))
 
 
-@app.get("/api/explorador-fuente-meta/{year}")
+@app.get("/api/explorador-fuente-meta/{year}", tags=["Territorio"],
+         summary="Fuente de financiamiento × departamento de destino (META) × nivel")
 @ttl_cache
 def expl_fuente(year: int):
     return q("SELECT ubigeo, departamento, fuente, nivel, pim, devengado "
@@ -215,7 +255,8 @@ def _cubo(year: int, dimension: str, nivel: str | None, departamento: str | None
     return q(sql, tuple(params))
 
 
-@app.get("/api/cubo")
+@app.get("/api/cubo", tags=["OLAP"],
+         summary="Cubo OLAP: cruce año × dimensión × nivel × departamento")
 def cubo(year: int, response: Response, dimension: str = "funcion",
          nivel: str | None = None, departamento: str | None = None):
     """Cubo OLAP simple: cruza año × dimensión (funcion|fuente) × nivel × departamento (destino META)."""
@@ -235,7 +276,7 @@ NINACHA_SYSTEM = (
 )
 
 
-@app.post("/api/ninacha")
+@app.post("/api/ninacha", tags=["IA"], summary="Pregunta a Ninacha (asistente IA del observatorio)")
 async def ninacha(payload: dict):
     """Ninacha — IA del observatorio. El servidor llama a OpenRouter con la key oculta; el cliente
     solo envía la pregunta y un resumen del contexto de datos. Guardrails + anti-overclaiming."""

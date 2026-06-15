@@ -100,6 +100,7 @@ export default function Layout() {
           <footer className="mt-10 pt-6 border-t border-ink-200 dark:border-ink-800 text-xs text-ink-400 leading-relaxed">
             <p><strong>QHAWAY 2.0</strong> — Observatorio Nacional de Inteligencia Territorial, Presupuesto Público, Cambio Climático, Riesgos y Desarrollo Humano. Propuesta de relanzamiento para FIEECS-UNI.</p>
             <p className="mt-1">Fuente principal: <a className="text-brand-500" href="https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto" target="_blank" rel="noreferrer">MEF — Datos Abiertos (SIAF)</a>. Datos abiertos bajo licencia CC BY 4.0. Las cifras pueden diferir de Consulta Amigable por fecha de corte y nivel de agregación.</p>
+            <p className="mt-1"><strong>API pública</strong> (datos abiertos, reutilizables): <a className="text-brand-500" href="https://qhaway.tunky.net/docs" target="_blank" rel="noreferrer">documentación interactiva (Swagger)</a> · <a className="text-brand-500" href="https://qhaway.tunky.net/redoc" target="_blank" rel="noreferrer">ReDoc</a>.</p>
           </footer>
         </main>
       </div>
