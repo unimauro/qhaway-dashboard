@@ -7,6 +7,7 @@ import { soles, solesCompact, num, pct } from '../lib/format'
 import { Card, CardHeader, HelpTip, KPI, Pill, Select, Loading, ErrorBox, SectionIntro } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import CuboPivotView from '../components/CuboPivot'
 
 // ───────────────────────── Cubo Presupuestal ─────────────────────────
 // Cruza, por distrito (ubigeo 6 díg), cuatro dimensiones que el MEF NO integra:
@@ -408,6 +409,9 @@ export default function Cubo() {
           inundaciones, huaicos, friajes, El Niño). Piso altitudinal por altitud de la capital.
         </span>
       </div>
+
+      {/* ── 0. Pivote OLAP en vivo (cruce arbitrario contra la API) ── */}
+      <CuboPivotView years={distYears} />
 
       {/* ── 1. Presets ── */}
       <Card>

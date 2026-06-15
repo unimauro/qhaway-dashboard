@@ -114,3 +114,24 @@ export const getAltitudes = () => loadJSON<AltitudDistrito[]>('altitud-distritos
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getGeoJSON = () => loadJSON<any>('distritos.geojson')
+
+// Pivote OLAP en vivo (solo API; sin respaldo estático). Cruza dim×by midiendo measure por año.
+export interface CuboPivot {
+  year: number
+  dim: string
+  by: string
+  measure: string
+  columnas: string[]
+  filas: { clave: string; total: number; valores: Record<string, number> }[]
+}
+export async function getCuboPivot(
+  year: number,
+  dim: 'funcion' | 'fuente',
+  by: 'nivel' | 'departamento',
+  measure: 'pim' | 'devengado',
+): Promise<CuboPivot> {
+  const url = `${API_BASE}/api/cubo-pivot?year=${year}&dim=${dim}&by=${by}&measure=${measure}`
+  const res = await fetchWithTimeout(url, API_TIMEOUT_MS)
+  if (!res.ok) throw new Error(`El pivote en vivo no está disponible (HTTP ${res.status}).`)
+  return (await res.json()) as CuboPivot
+}

@@ -265,6 +265,46 @@ def cubo(year: int, response: Response, dimension: str = "funcion",
     return rows
 
 
+_PIVOT_DIM = {"funcion": ("gasto_meta_funcion", "funcion"), "fuente": ("gasto_meta_fuente", "fuente")}
+_PIVOT_BY = {"nivel", "departamento"}
+_PIVOT_MEASURE = {"pim", "devengado"}
+
+
+@ttl_cache
+def _cubo_pivot(year: int, dim: str, by: str, measure: str):
+    tbl, dcol = _PIVOT_DIM[dim]
+    sql = (f"SELECT {dcol} AS fila, {by} AS col, SUM({measure}) v "
+           f"FROM {tbl} WHERE ano=%s GROUP BY 1,2")
+    return q(sql, (year,))
+
+
+@app.get("/api/cubo-pivot", tags=["OLAP"],
+         summary="Pivote OLAP 2D en vivo: dimensión (filas) × eje (columnas)")
+def cubo_pivot(year: int, response: Response, dim: str = "funcion",
+               by: str = "nivel", measure: str = "pim"):
+    """Tabla cruzada en vivo: `dim` (funcion|fuente) en filas × `by` (nivel|departamento) en
+    columnas, midiendo `measure` (pim|devengado), por destino territorial (META) y año.
+    Devuelve {columnas, filas:[{clave, total, valores:{col:val}}]} ordenadas por total desc."""
+    if dim not in _PIVOT_DIM or by not in _PIVOT_BY or measure not in _PIVOT_MEASURE:
+        raise HTTPException(400, "Parámetros: dim=funcion|fuente, by=nivel|departamento, measure=pim|devengado")
+    rows = _cubo_pivot(year, dim, by, measure)
+    cols: dict[str, float] = {}
+    filas: dict[str, dict] = {}
+    for r in rows:
+        fila, col, v = r["fila"] or "—", r["col"] or "—", float(r["v"] or 0)
+        cols[col] = cols.get(col, 0.0) + v
+        f = filas.setdefault(fila, {"clave": fila, "total": 0.0, "valores": {}})
+        f["total"] += v
+        f["valores"][col] = round(f["valores"].get(col, 0.0) + v, 2)
+    columnas = [c for c, _ in sorted(cols.items(), key=lambda kv: -kv[1])]
+    filas_ord = sorted(filas.values(), key=lambda f: -f["total"])
+    for f in filas_ord:
+        f["total"] = round(f["total"], 2)
+    response.headers["Cache-Control"] = CACHE_YEAR
+    return {"year": year, "dim": dim, "by": by, "measure": measure,
+            "columnas": columnas, "filas": filas_ord}
+
+
 # --- Ninacha 🔥: asistente IA (proxy a OpenRouter, key oculta en el servidor) ---
 NINACHA_SYSTEM = (
     "Eres Ninacha, la asistente del observatorio ciudadano QHAWAY sobre el presupuesto público "
