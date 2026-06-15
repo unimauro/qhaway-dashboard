@@ -105,6 +105,7 @@ export default function Layout() {
               Desarrollado por <strong className="text-ink-600 dark:text-ink-300">Carlos Cárdenas Fernández</strong>
               {' · '}<a className="text-brand-500 hover:underline" href="https://unimauro.github.io/" target="_blank" rel="noreferrer">Portafolio</a>
               {' · '}<a className="text-brand-500 hover:underline" href="https://github.com/unimauro" target="_blank" rel="noreferrer">GitHub</a>
+              {' · '}<a className="text-brand-500 hover:underline" href="https://www.linkedin.com/in/carloscardenasf/" target="_blank" rel="noreferrer">LinkedIn</a>
               {' · '}<a className="text-brand-500 hover:underline" href="mailto:carlos@cardenas.pe">carlos@cardenas.pe</a>
             </p>
           </footer>
