@@ -101,6 +101,12 @@ export default function Layout() {
             <p><strong>QHAWAY 2.0</strong> — Observatorio Nacional de Inteligencia Territorial, Presupuesto Público, Cambio Climático, Riesgos y Desarrollo Humano. Propuesta de relanzamiento para FIEECS-UNI.</p>
             <p className="mt-1">Fuente principal: <a className="text-brand-500" href="https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto" target="_blank" rel="noreferrer">MEF — Datos Abiertos (SIAF)</a>. Datos abiertos bajo licencia CC BY 4.0. Las cifras pueden diferir de Consulta Amigable por fecha de corte y nivel de agregación.</p>
             <p className="mt-1"><strong>API pública</strong> (datos abiertos, reutilizables): <a className="text-brand-500" href="https://qhaway.tunky.net/docs" target="_blank" rel="noreferrer">documentación interactiva (Swagger)</a> · <a className="text-brand-500" href="https://qhaway.tunky.net/redoc" target="_blank" rel="noreferrer">ReDoc</a>.</p>
+            <p className="mt-3 pt-3 border-t border-ink-200/60 dark:border-ink-800/60">
+              Desarrollado por <strong className="text-ink-600 dark:text-ink-300">Carlos Cárdenas Fernández</strong>
+              {' · '}<a className="text-brand-500 hover:underline" href="https://unimauro.github.io/" target="_blank" rel="noreferrer">Portafolio</a>
+              {' · '}<a className="text-brand-500 hover:underline" href="https://github.com/unimauro" target="_blank" rel="noreferrer">GitHub</a>
+              {' · '}<a className="text-brand-500 hover:underline" href="mailto:carlos@cardenas.pe">carlos@cardenas.pe</a>
+            </p>
           </footer>
         </main>
       </div>
