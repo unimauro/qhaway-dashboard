@@ -20,7 +20,13 @@ RATE_MAX = int(os.environ.get("RATE_MAX", "120"))            # req por ventana
 RATE_WINDOW = int(os.environ.get("RATE_WINDOW", "60"))       # segundos
 # Ninacha (IA): key OCULTA en el servidor; el cliente nunca la ve. Modelo gratuito de OpenRouter.
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY", "").strip()
-OR_MODEL = os.environ.get("OR_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+OR_MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-120b:free")
+# El tier gratuito de OpenRouter se satura (429) o deprecia modelos: probamos varios en orden
+# hasta que uno responda. Todos verificados disponibles y :free.
+_OR_LIST = [OR_MODEL, "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3-super-120b-a12b:free", "meta-llama/llama-3.3-70b-instruct:free"]
+_seen: set = set()
+OR_FALLBACKS = [m for m in _OR_LIST if m and not (m in _seen or _seen.add(m))]
 
 API_DESC = """
 **API pública del Observatorio QHAWAY** — presupuesto público del Perú (SIAF-MEF) e
@@ -327,7 +333,6 @@ async def ninacha(payload: dict):
     if not pregunta:
         raise HTTPException(400, "Falta la pregunta")
     body = {
-        "model": OR_MODEL,
         "messages": [
             {"role": "system", "content": NINACHA_SYSTEM + "\n\nCONTEXTO DE DATOS:\n" + contexto},
             {"role": "user", "content": pregunta},
@@ -341,15 +346,21 @@ async def ninacha(payload: dict):
         "HTTP-Referer": "https://unimauro.github.io/qhaway-dashboard/",
         "X-Title": "QHAWAY Ninacha",
     }
-    try:
-        async with httpx.AsyncClient(timeout=45) as client:
-            r = await client.post("https://openrouter.ai/api/v1/chat/completions",
-                                  json=body, headers=headers)
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Error conectando con la IA: {type(e).__name__}")
-    if r.status_code != 200:
-        raise HTTPException(502, f"IA no disponible (OpenRouter {r.status_code})")
-    texto = (r.json().get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-    if not texto:
-        raise HTTPException(502, "La IA devolvió una respuesta vacía")
-    return {"texto": texto, "modelo": OR_MODEL}
+    last = "sin respuesta"
+    async with httpx.AsyncClient(timeout=45) as client:
+        for model in OR_FALLBACKS:  # prueba modelos gratis en orden hasta que uno responda
+            body["model"] = model
+            try:
+                r = await client.post("https://openrouter.ai/api/v1/chat/completions",
+                                      json=body, headers=headers)
+            except httpx.HTTPError as e:
+                last = f"conexión {type(e).__name__}"
+                continue
+            if r.status_code == 200:
+                texto = (r.json().get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+                if texto:
+                    return {"texto": texto, "modelo": model}
+                last = "respuesta vacía"
+                continue
+            last = f"OpenRouter {r.status_code}"  # 429/404 → siguiente modelo
+    raise HTTPException(502, f"IA no disponible ahora ({last}). Intenta en un momento.")
