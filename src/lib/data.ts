@@ -8,9 +8,16 @@ const BASE = import.meta.env.BASE_URL // '/qhaway-dashboard/'
 
 // API del VPS (PostgreSQL): sirve el histórico completo por año. Si está caída o un
 // año no está cargado aún, se cae con gracia a los JSON estáticos del repo.
-// Seguridad: la protege CORS (solo este origen) + rate limiting en el servidor; no se
-// embebe ninguna clave en el cliente (sería pública en un sitio estático).
-const API_BASE = 'https://qhaway.tunky.net'
+// En qhaway.org el propio Caddy proxquea /api/* al backend → usamos same-origin (''),
+// sin CORS. En GitHub Pages / dev se usa la URL absoluta del VPS (con CORS + rate limit).
+function resolveApiBase(): string {
+  if (typeof location !== 'undefined') {
+    const h = location.hostname
+    if (h === 'qhaway.org' || h === 'www.qhaway.org') return ''
+  }
+  return 'https://qhaway.tunky.net'
+}
+export const API_BASE = resolveApiBase()
 
 const cache = new Map<string, unknown>()
 

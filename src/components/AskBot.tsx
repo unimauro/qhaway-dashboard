@@ -6,6 +6,7 @@ import {
   getPorSector,
   getGeoJSON,
   loadJSON,
+  API_BASE,
 } from '../lib/data'
 import type {
   PorDepartamento,
@@ -28,7 +29,7 @@ import { soles, solesCompact, pct, ejecucion } from '../lib/format'
 //      modo guiado. Nunca rompe si faltan datos.
 // ────────────────────────────────────────────────────────────────────────────
 
-const NINACHA_API = 'https://qhaway.tunky.net/api/ninacha'
+const NINACHA_API = `${API_BASE}/api/ninacha`
 const LS_KEY = 'qhaway-gemini-key'
 const MAX_HISTORIAL = 40
 

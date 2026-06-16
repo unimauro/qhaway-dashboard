@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Base path para GitHub Pages (https://unimauro.github.io/qhaway-dashboard/)
+// Base path configurable:
+//  - GitHub Pages (mirror): '/qhaway-dashboard/' (default)
+//  - VPS / dominio propio qhaway.org: '/'  → build con `VITE_BASE=/ npm run build`
 export default defineConfig({
   plugins: [react()],
-  base: '/qhaway-dashboard/',
+  base: process.env.VITE_BASE || '/qhaway-dashboard/',
   build: {
     chunkSizeWarningLimit: 1600,
   },
