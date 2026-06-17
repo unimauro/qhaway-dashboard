@@ -24,6 +24,7 @@ import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import YearStrip from '../components/YearStrip'
 import { soles, solesCompact, num, pct } from '../lib/format'
+import { downloadCSV } from '../lib/download'
 
 interface PisoFeature {
   IDDIST: string
@@ -39,6 +40,16 @@ interface FilaPiso {
   pim: number
   devengado: number
   conPresupuesto: number
+}
+
+interface FilaDistritoPiso {
+  ubigeo: string
+  nombre: string
+  depto: string
+  pisoId: string
+  piso: string
+  altitud: number | null
+  pob: number | null
 }
 
 // Poblaciones base de referencia para el per cápita legible.
@@ -108,6 +119,30 @@ export default function Pisos() {
     }
     return m
   }, [geoRes.data, altPorUbigeo, indPorUbigeo])
+
+  // --- Lista de distritos con su piso (para el explorador "distritos por piso" + descarga) ---
+  const distritosLista = useMemo<FilaDistritoPiso[]>(() => {
+    const geo = geoRes.data as { features?: { properties?: PisoFeature }[] } | undefined
+    const out: FilaDistritoPiso[] = []
+    if (!geo?.features) return out
+    for (const f of geo.features) {
+      const p = f.properties
+      if (!p?.IDDIST) continue
+      const piso = pisoPorUbigeo.get(p.IDDIST)
+      if (!piso) continue
+      const ind = indPorUbigeo.get(p.IDDIST)
+      out.push({
+        ubigeo: p.IDDIST,
+        nombre: p.NOMBDIST || p.IDDIST,
+        depto: p.NOMBDEP || '',
+        pisoId: piso.id,
+        piso: piso.nombre,
+        altitud: ind?.altitud ?? null,
+        pob: ind?.pob ?? null,
+      })
+    }
+    return out.sort((a, b) => a.depto.localeCompare(b.depto, 'es') || a.nombre.localeCompare(b.nombre, 'es'))
+  }, [geoRes.data, pisoPorUbigeo, indPorUbigeo])
 
   // --- values para el mapa coloreado por piso ---
   const mapValues = useMemo(() => {
@@ -332,6 +367,8 @@ export default function Pisos() {
         equidad que casi nadie hace:{' '}
         <em>¿cada piso altitudinal recibe presupuesto en proporción a la gente que vive en él?</em>
       </SectionIntro>
+
+      <DistritosPorPiso lista={distritosLista} />
 
       {/* 1. Metodología explícita + selector de población base */}
       <Card>
@@ -660,5 +697,107 @@ export default function Pisos() {
         <Chart option={optDistribucion} height={Math.max(220, filas.length * 44)} />
       </Card>
     </div>
+  )
+}
+
+// ───────────────────────── Distritos por piso (explorador + descarga CSV) ─────────────────────────
+function DistritosPorPiso({ lista }: { lista: FilaDistritoPiso[] }) {
+  const [pisoSel, setPisoSel] = useState<string>('all')
+  const [query, setQuery] = useState('')
+
+  const pisoOpts = useMemo(
+    () => [{ value: 'all', label: 'Todos los pisos' }, ...TODOS_PISOS.map((p) => ({ value: p.id, label: p.nombre }))],
+    [],
+  )
+  const q = query.trim().toLowerCase()
+  const filtradas = useMemo(
+    () =>
+      lista.filter(
+        (d) =>
+          (pisoSel === 'all' || d.pisoId === pisoSel) &&
+          (!q || d.nombre.toLowerCase().includes(q) || d.depto.toLowerCase().includes(q)),
+      ),
+    [lista, pisoSel, q],
+  )
+  const visibles = filtradas.slice(0, 400)
+
+  const descargar = () =>
+    downloadCSV(
+      `qhaway-distritos-por-piso${pisoSel !== 'all' ? '-' + pisoSel : ''}`,
+      [
+        { key: 'ubigeo', label: 'UBIGEO' },
+        { key: 'nombre', label: 'Distrito' },
+        { key: 'depto', label: 'Departamento' },
+        { key: 'piso', label: 'Piso altitudinal' },
+        { key: 'altitud', label: 'Altitud (msnm)' },
+        { key: 'pob', label: 'Poblacion' },
+      ],
+      filtradas.map((d) => ({ ...d, altitud: d.altitud != null ? Math.round(d.altitud) : '', pob: d.pob ?? '' })),
+    )
+
+  return (
+    <Card>
+      <CardHeader
+        title="Distritos por piso altitudinal"
+        subtitle="¿Qué distritos son Chala, Yunga, Quechua, Suni, Puna, Janca o Selva? Filtra, busca y descarga."
+        right={<Pill tone="neutral">{num(filtradas.length)} distritos</Pill>}
+        help={
+          <HelpTip>
+            Clasificación por la altitud de la capital de cada distrito (Pulgar Vidal), aproximación
+            metodológica. La selva se discrimina además por departamento. Descarga la lista en CSV
+            (abre en Excel) para tus informes o tesis.
+          </HelpTip>
+        }
+      />
+      <div className="flex flex-wrap items-end gap-3 px-4 pb-2">
+        <Select<string> value={pisoSel} onChange={setPisoSel} options={pisoOpts} label="Piso" />
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-ink-400">Buscar</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Distrito o departamento…"
+            className="rounded-lg border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-950 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+          />
+        </label>
+        <button
+          onClick={descargar}
+          className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+        >
+          ⬇ Descargar CSV
+        </button>
+      </div>
+      <div className="px-4 pb-4">
+        <div className="max-h-[460px] overflow-auto rounded-lg border border-ink-200 dark:border-ink-800">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-ink-50 dark:bg-ink-900">
+              <tr className="text-xs text-ink-500 dark:text-ink-400">
+                <th className="py-2 px-2 text-left">Distrito</th>
+                <th className="py-2 px-2 text-left">Departamento</th>
+                <th className="py-2 px-2 text-left">Piso</th>
+                <th className="py-2 px-2 text-right">Altitud</th>
+                <th className="py-2 px-2 text-right">Población</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibles.map((d) => (
+                <tr key={d.ubigeo} className="border-t border-ink-100 dark:border-ink-800/60">
+                  <td className="py-1.5 px-2 font-medium text-ink-800 dark:text-ink-100">{d.nombre}</td>
+                  <td className="py-1.5 px-2 text-ink-500 dark:text-ink-400">{d.depto}</td>
+                  <td className="py-1.5 px-2">{d.piso}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">{d.altitud != null ? `${num(Math.round(d.altitud))} m` : '—'}</td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">{d.pob != null ? num(d.pob) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filtradas.length > visibles.length && (
+          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+            Mostrando 400 de {num(filtradas.length)}. Afina el filtro o descarga el CSV para la lista completa.
+          </p>
+        )}
+      </div>
+    </Card>
   )
 }
