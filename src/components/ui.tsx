@@ -102,8 +102,16 @@ export function ErrorBox({ error }: { error: string }) {
   return (
     <div className="m-4 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/30 p-4 text-sm text-amber-800 dark:text-amber-200">
       <strong>No se pudieron cargar los datos.</strong>
-      <p className="mt-1 text-xs opacity-80">{error}</p>
-      <p className="mt-2 text-xs">Si el ETL aún no ha corrido, ejecuta <code className="px-1 rounded bg-amber-100 dark:bg-amber-900">python etl/build.py</code> o espera a que el flujo de datos termine.</p>
+      <p className="mt-1 text-xs opacity-80">
+        Puede ser una conexión lenta o un pico de tráfico. Intenta de nuevo en un momento.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700"
+      >
+        ↻ Reintentar
+      </button>
+      {import.meta.env.DEV && <p className="mt-2 text-[10px] opacity-60">{error}</p>}
     </div>
   )
 }

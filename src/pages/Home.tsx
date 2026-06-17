@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { getMeta, getSerieNacional, getPorNivel, loadJSON } from '../lib/data'
+import { getMeta, getSerieNacional, loadJSON } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
 import { solesCompact, pct, ejecucion } from '../lib/format'
 import SerieChart, { type PuntoMensual } from '../components/SerieChart'
@@ -47,18 +47,17 @@ const MODULOS = [
 function KpisYGrafico() {
   const meta = useAsync(getMeta, [])
   const serie = useAsync(getSerieNacional, [])
-  const nivel = useAsync(getPorNivel, [])
   // Evolución mensual del año vigente (opcional; si no existe, el gráfico usa barras de fases).
   const mensual = useAsync(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
   // Serie histórica oficial (Presupuesto del Sector Público, cierre anual, MEF).
   const oficial = useAsync(() => loadJSON<import('../lib/types').SerieNacional[]>('serie-historica-oficial.json'), [])
 
-  const loading = meta.loading || serie.loading || nivel.loading
-  const error = meta.error || serie.error || nivel.error
+  const loading = meta.loading || serie.loading
+  const error = meta.error || serie.error
 
   if (loading) return <Loading label="Cargando indicadores nacionales…" />
   if (error) return <ErrorBox error={error} />
-  if (!meta.data || !serie.data || !nivel.data) return <Loading />
+  if (!meta.data || !serie.data) return <Loading />
 
   const m = meta.data
   // Última serie nacional disponible

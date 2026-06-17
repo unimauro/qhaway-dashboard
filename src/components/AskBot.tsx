@@ -676,11 +676,15 @@ function resumenContexto(d: Datos | null): string {
 // Ninacha vía VPS: el servidor llama a OpenRouter (modelo gratuito) con la key OCULTA.
 // El cliente solo envía la pregunta + un resumen del contexto de datos. Costo $0.
 async function preguntarNinacha(pregunta: string, d: Datos | null): Promise<string> {
+  // Timeout cliente: si el server tarda (modelo gratis saturado), no dejamos "Pensando…" colgado.
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 25000)
   const res = await fetch(NINACHA_API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pregunta, contexto: resumenContexto(d) }),
-  })
+    signal: ctrl.signal,
+  }).finally(() => clearTimeout(t))
   if (!res.ok) {
     let detalle = `HTTP ${res.status}`
     try {

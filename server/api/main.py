@@ -26,7 +26,10 @@ OR_MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-120b:free")
 _OR_LIST = [OR_MODEL, "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
             "nvidia/nemotron-3-super-120b-a12b:free", "meta-llama/llama-3.3-70b-instruct:free"]
 _seen: set = set()
-OR_FALLBACKS = [m for m in _OR_LIST if m and not (m in _seen or _seen.add(m))]
+# Máximo 3 modelos en cadena (con timeout corto): evita que un request a Ninacha
+# ocupe un worker por minutos si el tier gratuito está saturado.
+OR_FALLBACKS = [m for m in _OR_LIST if m and not (m in _seen or _seen.add(m))][:3]
+OR_TIMEOUT = 12  # segundos por intento
 
 API_DESC = """
 **API pública del Observatorio QHAWAY** — presupuesto público del Perú (SIAF-MEF) e
@@ -160,6 +163,7 @@ def health():
 
 
 @app.get("/api/meta", tags=["Sistema"], summary="Años disponibles, último corte y fases")
+@ttl_cache
 def meta():
     years = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_nacional ORDER BY ano")]
     dyears = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_distrito ORDER BY ano DESC")]
@@ -347,7 +351,7 @@ async def ninacha(payload: dict):
         "X-Title": "QHAWAY Ninacha",
     }
     last = "sin respuesta"
-    async with httpx.AsyncClient(timeout=45) as client:
+    async with httpx.AsyncClient(timeout=OR_TIMEOUT) as client:
         for model in OR_FALLBACKS:  # prueba modelos gratis en orden hasta que uno responda
             body["model"] = model
             try:

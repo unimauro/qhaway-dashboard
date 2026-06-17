@@ -36,9 +36,12 @@ function apiEndpoint(path: string): string | null {
   return null
 }
 
+// Timeout también en los estáticos: si el VPS sirve lento o la conexión se corta a
+// mitad de un archivo grande (geojson ~1.8 MB), no dejamos el spinner colgado para siempre.
+const STATIC_TIMEOUT_MS = 20000
 async function fromStatic<T>(path: string): Promise<T> {
   const url = `${BASE}data/${path}`.replace(/\/{2,}/g, '/')
-  const res = await fetch(url)
+  const res = await fetchWithTimeout(url, STATIC_TIMEOUT_MS)
   if (!res.ok) throw new Error(`No se pudo cargar ${path} (HTTP ${res.status})`)
   return (await res.json()) as T
 }
