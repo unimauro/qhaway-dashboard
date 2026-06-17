@@ -10,6 +10,7 @@ import {
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import YearStrip from '../components/YearStrip'
+import { downloadCSV } from '../lib/download'
 
 /* ───────────────────────── Tipos de los datasets del explorador ───────────────────────── */
 
@@ -787,7 +788,26 @@ function TablaDetalle({
             con su PIM, devengado y % de ejecución. Pulsa la cabecera de {FASE_LABEL[fase]} para invertir el orden.
           </HelpTip>
         }
-        right={<Pill tone="neutral">{year}</Pill>}
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                downloadCSV(`qhaway-explorador-${dimension}-${year}`, [
+                  { key: 'ubigeo', label: 'UBIGEO_depto' },
+                  { key: 'departamento', label: 'Departamento' },
+                  { key: 'cat', label: catHead },
+                  { key: 'nivel', label: 'Nivel de gobierno' },
+                  { key: 'pim', label: 'PIM' },
+                  { key: 'devengado', label: 'Devengado' },
+                ], filasFiltradas as unknown as Record<string, unknown>[])
+              }
+              className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700"
+            >
+              ⬇ CSV
+            </button>
+            <Pill tone="neutral">{year}</Pill>
+          </div>
+        }
       />
       <div className="px-4 pb-4 overflow-x-auto">
         {rows.length === 0 ? (

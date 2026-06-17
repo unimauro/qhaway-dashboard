@@ -4,6 +4,7 @@ import { useAsync } from '../lib/useAsync'
 import { soles, solesCompact } from '../lib/format'
 import { Card, CardHeader, HelpTip, Select, Loading, ErrorBox, Pill } from './ui'
 import { Chart } from './Chart'
+import { downloadCSV } from '../lib/download'
 
 type Dim = 'funcion' | 'fuente'
 type By = 'nivel' | 'departamento'
@@ -100,7 +101,26 @@ export default function CuboPivotView({ years }: { years: number[] }) {
             medida. Atribución por destino territorial (META).
           </HelpTip>
         }
-        right={<Pill tone="brand">en vivo</Pill>}
+        right={
+          <div className="flex items-center gap-2">
+            {pivot.data && pivot.data.filas.length > 0 && (
+              <button
+                onClick={() => {
+                  const d = pivot.data!
+                  const cols = [{ key: 'clave', label: dim === 'funcion' ? 'Función' : 'Fuente' },
+                    ...d.columnas.map((c) => ({ key: c, label: c })),
+                    { key: 'total', label: 'Total' }]
+                  const rows = d.filas.map((f) => ({ clave: f.clave, total: Math.round(f.total), ...f.valores }))
+                  downloadCSV(`qhaway-cubo-${dim}-x-${by}-${measure}-${year}`, cols, rows as Record<string, unknown>[])
+                }}
+                className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700"
+              >
+                ⬇ CSV
+              </button>
+            )}
+            <Pill tone="brand">en vivo</Pill>
+          </div>
+        }
       />
       <div className="flex flex-wrap items-end gap-3 px-4 pb-1">
         {sel(String(year), (v) => setYear(Number(v)), 'Año', yrs.map((y) => ({ value: String(y), label: String(y) })))}

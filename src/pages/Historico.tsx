@@ -8,6 +8,7 @@ import {
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import { downloadCSV } from '../lib/download'
 
 /* ───────────────────────── Tipos y constantes ───────────────────────── */
 
@@ -126,6 +127,18 @@ function HistoricoBody({
   const fracNac = ejecucion(totalDev, totalPim)
   const nDeptos = delAnio.length
 
+  const descargarSerie = () =>
+    downloadCSV('qhaway-presupuesto-regional-2004-2026', [
+      { key: 'year', label: 'Anio' },
+      { key: 'ubigeo', label: 'UBIGEO_depto' },
+      { key: 'departamento', label: 'Departamento' },
+      { key: 'pia', label: 'PIA' },
+      { key: 'pim', label: 'PIM' },
+      { key: 'certificado', label: 'Certificado' },
+      { key: 'devengado', label: 'Devengado' },
+      { key: 'girado', label: 'Girado' },
+    ], rows as unknown as Record<string, unknown>[])
+
   return (
     <div className="space-y-5">
       <SectionIntro title="Evolución Regional 2004-2026">
@@ -146,6 +159,13 @@ function HistoricoBody({
         <div className="flex flex-wrap items-center gap-3">
           <Select<number> value={year} onChange={(y) => { setYear(y); setMapSel(undefined) }} options={yearOpts} label="Año" />
           <Select<Fase> value={fase} onChange={setFase} options={FASE_OPTS} label="Fase" />
+          <button
+            onClick={descargarSerie}
+            className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
+            title="Descarga toda la serie por región y año (Excel)"
+          >
+            ⬇ Descargar serie completa
+          </button>
           {fase === 'devengado' && !devengadoConfiable && (
             <Pill tone="warn">sin devengado confiable en {year} — se muestra PIM</Pill>
           )}
