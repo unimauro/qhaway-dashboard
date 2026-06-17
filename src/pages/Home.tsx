@@ -25,6 +25,12 @@ const MODULOS = [
     frase: 'Distritos clasificados por los 8 pisos ecológicos de Pulgar Vidal según la altitud de su capital.',
   },
   {
+    to: '/clima',
+    icon: '🌡',
+    titulo: 'Cambio Climático',
+    frase: 'Inversión ambiental/climática territorializada y su cruce con el riesgo climático por región.',
+  },
+  {
     to: '/riesgos',
     icon: '◬',
     titulo: 'Riesgos Territoriales',
@@ -192,11 +198,11 @@ export default function Home() {
       <section>
         <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50 mb-1">Explora los módulos</h2>
         <p className="text-sm text-ink-400 mb-4 max-w-3xl">
-          Cuatro lentes complementarios sobre el mismo territorio: cómo se asigna el
-          gasto, cómo se distribuye la geografía, qué riesgos enfrenta y cómo prospera
-          su gente.
+          Lentes complementarios sobre el mismo territorio: cómo se asigna el gasto, cómo se
+          distribuye la geografía, cuánto se invierte en clima, qué riesgos enfrenta y cómo
+          prospera su gente.
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {MODULOS.map((mod) => (
             <Link
               key={mod.to}
