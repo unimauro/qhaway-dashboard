@@ -17,6 +17,7 @@ import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
 import YearStrip from '../components/YearStrip'
+import DondeSeGasta from '../components/DondeSeGasta'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
 type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
@@ -174,6 +175,11 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
           />
         </div>
       </Card>
+
+      {/* 2.5 ¿Dónde se gasta? — drill depto→provincia→distrito */}
+      {distrito.data && distrito.data.length > 0 && (
+        <DondeSeGasta data={distrito.data} year={year} nivel={nivel} />
+      )}
 
       {/* 3 y 4 en grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
