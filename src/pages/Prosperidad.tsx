@@ -215,17 +215,19 @@ export default function Prosperidad() {
       .map((d) => ({
         value: [d.ind.idh, d.ind.pobreza, d.ind.pob, d.ipt],
         name: d.nombre,
+        dep: d.departamento,
         itemStyle: { color: colorIPT(d.ipt), opacity: 0.6 },
       }))
     const maxPob = Math.max(1, ...datos.map((p) => p.value[2]))
     return {
       tooltip: {
         trigger: 'item',
-        formatter: (p: { value: number[]; name: string }) =>
-          `${p.name}<br/>IDH: ${p.value[0].toFixed(1)}<br/>Pobreza: ${pct(p.value[1] / 100)}<br/>Población: ${num(p.value[2])}<br/>IPT: ${p.value[3].toFixed(1)}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        formatter: (p: any) =>
+          `<b>${p.name}</b> · ${p.data?.dep ?? ''}<br/>IDH: ${p.value[0].toFixed(1)}<br/>Pobreza: ${pct(p.value[1] / 100)}<br/>Población: ${num(p.value[2])}<br/>IPT: ${p.value[3].toFixed(1)}`,
       },
-      xAxis: { name: 'IDH (0-100)', type: 'value', min: 0 },
-      yAxis: { name: 'Pobreza (%)', type: 'value', min: 0 },
+      xAxis: { name: 'IDH → mayor desarrollo', nameLocation: 'middle', nameGap: 28, type: 'value', min: 0 },
+      yAxis: { name: 'Pobreza (%) →', nameLocation: 'middle', nameGap: 40, type: 'value', min: 0 },
       series: [
         {
           type: 'scatter',

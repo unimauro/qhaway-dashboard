@@ -231,6 +231,16 @@ export default function Riesgos() {
             los distritos de un mismo departamento comparten el nivel mostrado.
           </span>
         </div>
+        <div className="mt-2 flex flex-wrap items-start gap-2 text-xs text-ink-500 dark:text-ink-400">
+          <Pill tone="neutral">cómo leer</Pill>
+          <span>
+            El <strong>mapa</strong>, los <strong>KPIs</strong> y <strong>población expuesta</strong> responden al
+            riesgo que elijas arriba. La <strong>matriz</strong> y los paneles de <strong>contexto histórico</strong>
+            (sismos, El Niño, glaciar, deforestación, damnificados) son <strong>generales y NO varían con el filtro</strong>:
+            son una compilación cualitativa de las fuentes oficiales con su <strong>dato más reciente disponible</strong>
+            (no un único año), cada panel con su propia fecha.
+          </span>
+        </div>
       </Card>
 
       {/* 1. MAPA por riesgo */}
