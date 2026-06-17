@@ -6,6 +6,18 @@ import CommandSearch from './CommandSearch'
 
 const openSearch = () => window.dispatchEvent(new Event('qhaway:open-search'))
 
+const BASE = import.meta.env.BASE_URL // '/' en qhaway.org, '/qhaway-dashboard/' en Pages
+
+// Logo institucional FIEECS-UNI: versión color (granate) en modo claro, blanca en oscuro.
+function FieecsLogo({ className = 'h-9' }: { className?: string }) {
+  return (
+    <a href="https://fieecs.uni.edu.pe" target="_blank" rel="noreferrer" aria-label="Facultad de Ingeniería Económica, Estadística y Ciencias Sociales — UNI">
+      <img src={`${BASE}fieecs-color.png`} alt="FIEECS — UNI" className={`${className} w-auto block dark:hidden`} />
+      <img src={`${BASE}fieecs-blanco.png`} alt="FIEECS — UNI" className={`${className} w-auto hidden dark:block`} />
+    </a>
+  )
+}
+
 const NAV = [
   { to: '/', label: 'Inicio', icon: '◉', end: true },
   { to: '/presupuesto', label: 'Presupuesto Público', icon: '▦' },
@@ -89,16 +101,24 @@ export default function Layout() {
             <ThemeBtn theme={theme} toggle={toggle} />
             <a href="https://github.com/unimauro/qhaway-dashboard" target="_blank" rel="noreferrer" className="text-xs text-ink-400 hover:text-brand-500">GitHub ↗</a>
           </div>
-          <p className="hidden lg:block text-[10px] text-ink-400 mt-4 leading-relaxed">
-            Datos del SIAF-MEF (Datos Abiertos). FIEECS-UNI.
-          </p>
+          <div className="hidden lg:block mt-4 pt-4 border-t border-ink-200 dark:border-ink-800">
+            <p className="text-[10px] uppercase tracking-wide text-ink-400 mb-2">Una iniciativa de</p>
+            <FieecsLogo className="h-10" />
+            <p className="text-[10px] text-ink-400 mt-2 leading-relaxed">Datos del SIAF-MEF (Datos Abiertos).</p>
+          </div>
         </aside>
 
         {/* Main */}
         <main className="flex-1 min-w-0 p-4 lg:p-6 max-w-[1400px] mx-auto w-full">
           <Outlet />
           <footer className="mt-10 pt-6 border-t border-ink-200 dark:border-ink-800 text-xs text-ink-400 leading-relaxed">
-            <p><strong>QHAWAY 2.0</strong> — Observatorio Nacional de Inteligencia Territorial, Presupuesto Público, Cambio Climático, Riesgos y Desarrollo Humano. Propuesta de relanzamiento para FIEECS-UNI.</p>
+            <div className="flex items-center gap-4 mb-4 pb-4 border-b border-ink-200/60 dark:border-ink-800/60">
+              <FieecsLogo className="h-12" />
+              <span className="text-[11px] text-ink-500 dark:text-ink-400 max-w-md">
+                Observatorio de la <strong>Facultad de Ingeniería Económica, Estadística y Ciencias Sociales</strong> · Universidad Nacional de Ingeniería (UNI).
+              </span>
+            </div>
+            <p><strong>QHAWAY 2.0</strong> — Observatorio Nacional de Inteligencia Territorial, Presupuesto Público, Cambio Climático, Riesgos y Desarrollo Humano. Iniciativa de la FIEECS-UNI.</p>
             <p className="mt-1">Fuente principal: <a className="text-brand-500" href="https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto" target="_blank" rel="noreferrer">MEF — Datos Abiertos (SIAF)</a>. Datos abiertos bajo licencia CC BY 4.0. Las cifras pueden diferir de Consulta Amigable por fecha de corte y nivel de agregación.</p>
             <p className="mt-1"><strong>API pública</strong> (datos abiertos, reutilizables): <a className="text-brand-500" href="https://qhaway.tunky.net/docs" target="_blank" rel="noreferrer">documentación interactiva (Swagger)</a> · <a className="text-brand-500" href="https://qhaway.tunky.net/redoc" target="_blank" rel="noreferrer">ReDoc</a>.</p>
             <p className="mt-3 pt-3 border-t border-ink-200/60 dark:border-ink-800/60">

@@ -164,6 +164,10 @@ export default function Home() {
     <div className="space-y-6">
       {/* Hero compacto */}
       <section className="rounded-3xl border border-ink-200 dark:border-ink-800 bg-gradient-to-br from-brand-500/10 via-white to-sky-500/5 dark:from-brand-500/15 dark:via-ink-900 dark:to-sky-900/10 p-6 md:p-8">
+        <a href="https://fieecs.uni.edu.pe" target="_blank" rel="noreferrer" className="inline-block mb-4" aria-label="FIEECS — UNI">
+          <img src={`${import.meta.env.BASE_URL}fieecs-color.png`} alt="Facultad de Ingeniería Económica, Estadística y Ciencias Sociales — UNI" className="h-12 md:h-14 w-auto block dark:hidden" />
+          <img src={`${import.meta.env.BASE_URL}fieecs-blanco.png`} alt="Facultad de Ingeniería Económica, Estadística y Ciencias Sociales — UNI" className="h-12 md:h-14 w-auto hidden dark:block" />
+        </a>
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <Pill tone="brand">FIEECS-UNI</Pill>
           <Pill tone="neutral">Datos abiertos · SIAF-MEF</Pill>
