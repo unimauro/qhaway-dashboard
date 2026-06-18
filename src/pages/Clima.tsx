@@ -9,6 +9,7 @@ import {
 } from '../components/ui'
 import { Chart, PALETA } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
+import ClimaProgramas from '../components/ClimaProgramas'
 
 /* ───────────────────────── Tipos de datasets ───────────────────────── */
 
@@ -416,9 +417,14 @@ export default function Clima() {
           <b>Ambiente</b> como núcleo y, en modo ampliado, <b>Saneamiento</b> (recursos hídricos),
           <b> Agropecuaria</b> (manejo de suelos/riego) y <b>Energía</b> como gasto relacionado con
           adaptación/mitigación. <b>No</b> es el etiquetado oficial por programa presupuestal con
-          marcadores climáticos (eso es Fase 2). Léelo como una cota inferior orientativa.
+          marcadores climáticos (eso es Fase 2). Léelo como una cota inferior orientativa.{' '}
+          <b>Abajo</b> añadimos una vista <b>más precisa por programa presupuestal</b> (lo que el MEF financia
+          para biodiversidad, riesgo de desastres, agua, bosques, residuos y suelos).
         </p>
       </SectionIntro>
+
+      {/* Presupuesto climático por programa presupuestal (más preciso) */}
+      <ClimaProgramas />
 
       <Card>
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
