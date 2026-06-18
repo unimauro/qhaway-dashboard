@@ -18,6 +18,7 @@ import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
 import YearStrip from '../components/YearStrip'
 import DondeSeGasta from '../components/DondeSeGasta'
+import ProgramaPresupuestal from '../components/ProgramaPresupuestal'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
 type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
@@ -192,6 +193,9 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
         <TreemapFuncion funcion={funcion} year={year} />
         <RankingSector sector={sector} year={year} />
       </div>
+
+      {/* 7. Categoría / Programa Presupuestal (con resaltado climático) */}
+      <ProgramaPresupuestal />
 
       <p className="text-[11px] text-ink-400">
         Fuentes:{' '}
