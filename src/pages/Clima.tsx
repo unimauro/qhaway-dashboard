@@ -10,6 +10,7 @@ import {
 import { Chart, PALETA } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import ClimaProgramas from '../components/ClimaProgramas'
+import ClimaTerritorio from '../components/ClimaTerritorio'
 
 /* ───────────────────────── Tipos de datasets ───────────────────────── */
 
@@ -425,6 +426,9 @@ export default function Clima() {
 
       {/* Presupuesto climático por programa presupuestal (más preciso) */}
       <ClimaProgramas />
+
+      {/* Programa climático × territorio (ej. biodiversidad en Cusco) */}
+      <ClimaTerritorio />
 
       <Card>
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
