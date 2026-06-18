@@ -42,6 +42,30 @@ const MODULOS = [
     titulo: 'Prosperidad (IPT)',
     frase: 'Índice de Prosperidad Territorial: desarrollo humano, pobreza y vulnerabilidad alimentaria por distrito.',
   },
+  {
+    to: '/explorador',
+    icon: '🔍',
+    titulo: 'Explorador Multidimensional',
+    frase: 'Cruza función/fuente × territorio × nivel de gobierno, con atribución por destino (META) y por ejecutora.',
+  },
+  {
+    to: '/cubo',
+    icon: '🧊',
+    titulo: 'Cubo Presupuestal (OLAP)',
+    frase: 'Pivote en vivo: cruza presupuesto × pobreza × IDH × piso × riesgo, y la tabla cruzada función × nivel/región.',
+  },
+  {
+    to: '/historico',
+    icon: '⏱',
+    titulo: 'Evolución Regional 2004-2026',
+    frase: 'Presupuesto por departamento para cada uno de 22 años: mapa por año, ranking y serie temporal regional.',
+  },
+  {
+    to: '/cobertura',
+    icon: '🧭',
+    titulo: 'Cobertura Territorial',
+    frase: 'Tres estados del dato ("con dato" / "sin dato" / "no existía") y la línea de tiempo de demarcación distrital.',
+  },
 ] as const
 
 function KpisYGrafico() {
