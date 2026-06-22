@@ -115,7 +115,13 @@ export const getSerieNacional = () => loadJSON<SerieNacional[]>('serie-nacional.
 export const getPorNivel = () => loadJSON<PorNivel[]>('por-nivel-gobierno.json')
 // Desglose por nivel de gobierno para un año concreto (API por-nivel/{año}; 2024-2025).
 export const getPorNivelYear = (year: number) => loadJSON<PorNivel[]>(`por-nivel-${year}.json`)
-export const getPorDepartamento = () => loadJSON<PorDepartamento[]>('por-departamento.json')
+// OJO: por-departamento.json solo trae regional+local (subestima ~10× el total). Usamos el
+// histórico por destino META, que SÍ incluye el Gobierno Nacional → PIM por región completo.
+export const getPorDepartamento = async (): Promise<PorDepartamento[]> => {
+  const hist = await loadJSON<PorDepartamento[]>('por-departamento-historico.json')
+  const objetivo = hist.some((r) => r.year === 2025) ? 2025 : Math.max(...hist.map((r) => r.year ?? 0))
+  return hist.filter((r) => r.year === objetivo)
+}
 export const getPorDistrito = (year: number) => loadJSON<PorDistrito[]>(`por-distrito-${year}.json`)
 export const getPorFuncion = (year: number) => loadJSON<PorFuncion[]>(`por-funcion-${year}.json`)
 export const getPorSector = (year: number) => loadJSON<PorSector[]>(`por-sector-${year}.json`)
