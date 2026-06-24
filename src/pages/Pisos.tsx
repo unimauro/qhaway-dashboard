@@ -424,6 +424,19 @@ export default function Pisos() {
             un dato oficial cerrado. Las cifras per cápita sirven para comparar pisos entre
             sí, no como gasto exacto por persona.
           </p>
+          <div className="pt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <a href="#/metodologia" className="text-brand-600 hover:underline decoration-dotted">
+              → Metodología completa y glosario
+            </a>
+            <a
+              href="https://unimauro.github.io/qhaway-observatorio-2026/entregables/QHAWAY_PROPUESTA.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="text-brand-600 hover:underline decoration-dotted"
+            >
+              → Documento de la propuesta (PDF)
+            </a>
+          </div>
         </div>
       </Card>
 
