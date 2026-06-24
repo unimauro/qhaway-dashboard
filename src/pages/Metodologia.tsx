@@ -151,7 +151,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: '¿Cómo reporto un error o me comunico con el equipo?',
-    a: 'Tienes dos vías. Para reportes técnicos puedes abrir un issue en el repositorio de GitHub (con el dato, la página y una captura si puedes). Para consultas, sugerencias, datos o colaboraciones, usa el Buzón de contacto al final de esta página: tu mensaje llega directo al equipo del observatorio por correo, sin servicios de terceros.',
+    a: 'Tienes dos vías. Para reportes técnicos puedes abrir un issue en el repositorio de GitHub (con el dato, la página y una captura si puedes). Para consultas, sugerencias, datos o colaboraciones, usa la sección Contacto (en el menú) o el buzón al final de esta página: tu mensaje llega directo al equipo del observatorio por correo, sin servicios de terceros.',
   },
   {
     q: '¿Quién es Ninacha, el asistente que aparece en el tablero?',
@@ -528,7 +528,7 @@ export default function Metodologia() {
                 abre un issue en GitHub
               </a>
               . Consultas, sugerencias o colaboraciones:{' '}
-              <a href="#buzon" className="text-brand-600 underline decoration-dotted hover:opacity-80">
+              <a href="#/contacto" className="text-brand-600 underline decoration-dotted hover:opacity-80">
                 usa el buzón de contacto
               </a>
               .

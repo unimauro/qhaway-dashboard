@@ -30,11 +30,17 @@ const NAV = [
   { to: '/historico', label: 'Evolución Regional 2004-2026', icon: '⏱' },
   { to: '/cobertura', label: 'Cobertura Territorial', icon: '◷' },
   { to: '/metodologia', label: 'Metodología y FAQ', icon: '?' },
+  { to: '/contacto', label: 'Contacto', icon: '✉' },
 ]
 
 // Wordmark oficial de QHAWAY (diseño de Mario para FIEECS-UNI): la "Q" es una máscara andina.
+// Es un enlace a Inicio (al presionarlo, vuelves al home).
 function Wordmark({ className = 'h-7' }: { className?: string }) {
-  return <img src={`${BASE}qhaway-logo.png`} alt="QHAWAY" className={`${className} w-auto shrink-0`} />
+  return (
+    <NavLink to="/" end aria-label="QHAWAY — Inicio" className="inline-flex shrink-0 items-center">
+      <img src={`${BASE}qhaway-logo.png`} alt="QHAWAY" className={`${className} w-auto`} />
+    </NavLink>
+  )
 }
 
 export default function Layout() {
@@ -47,6 +53,7 @@ export default function Layout() {
       <header className="lg:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 border-b border-ink-200 dark:border-ink-800 bg-white/80 dark:bg-ink-900/80 backdrop-blur">
         <Wordmark className="h-6" />
         <div className="flex items-center gap-2">
+          <NavLink to="/contacto" aria-label="Contacto" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">✉</NavLink>
           <button onClick={openSearch} aria-label="Buscar" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">⌕</button>
           <ThemeBtn theme={theme} toggle={toggle} />
           <button onClick={() => setOpen((o) => !o)} aria-label="Menú" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">☰</button>
@@ -104,6 +111,31 @@ export default function Layout() {
 
         {/* Main */}
         <main className="flex-1 min-w-0 p-4 lg:p-6 max-w-[1400px] mx-auto w-full">
+          {/* Barra superior de accesos rápidos (solo desktop; en móvil ya hay topbar) */}
+          <div className="hidden lg:flex items-center gap-3 mb-5">
+            <button
+              onClick={openSearch}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-ink-500 dark:text-ink-400 border border-ink-200 dark:border-ink-800 hover:border-brand-500 hover:text-brand-600 transition"
+            >
+              <span aria-hidden>⌕</span> Buscar distrito, región…
+              <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-ink-100 dark:bg-ink-800">Ctrl K</kbd>
+            </button>
+            <div className="flex-1" />
+            <a
+              href="https://github.com/unimauro/qhaway-dashboard"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-ink-400 hover:text-brand-500 transition"
+            >
+              GitHub ↗
+            </a>
+            <NavLink
+              to="/contacto"
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-lg bg-brand-500 text-white text-sm font-semibold hover:bg-brand-600 transition shadow-sm"
+            >
+              ✉️ Escríbenos
+            </NavLink>
+          </div>
           <Outlet />
           <footer className="mt-10 pt-6 border-t border-ink-200 dark:border-ink-800 text-xs text-ink-400 leading-relaxed">
             <div className="flex items-center gap-4 mb-4 pb-4 border-b border-ink-200/60 dark:border-ink-800/60">

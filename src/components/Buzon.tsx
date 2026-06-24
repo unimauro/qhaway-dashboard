@@ -14,6 +14,7 @@ export default function Buzon() {
   const [email, setEmail] = useState('')
   const [asunto, setAsunto] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [website, setWebsite] = useState('') // honeypot: debe quedar vacío (humanos)
   const [estado, setEstado] = useState<Estado>('idle')
   const [detalle, setDetalle] = useState('')
 
@@ -30,7 +31,7 @@ export default function Buzon() {
       const res = await fetch(`${API_BASE}/api/contacto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, email, asunto, mensaje }),
+        body: JSON.stringify({ nombre, email, asunto, mensaje, website }),
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
@@ -125,6 +126,18 @@ export default function Buzon() {
               </div>
             ) : (
               <form onSubmit={enviar} className="space-y-3">
+                {/* Honeypot anti-bot: invisible para humanos, fuera del tab. Si se llena, el server descarta. */}
+                <div aria-hidden className="absolute -left-[9999px] top-0 h-0 w-0 overflow-hidden">
+                  <label htmlFor="bz-website">No llenar</label>
+                  <input
+                    id="bz-website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                  />
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium opacity-70 mb-1" htmlFor="bz-nombre">

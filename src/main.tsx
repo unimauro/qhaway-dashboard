@@ -57,6 +57,7 @@ const Cubo = lazy(() => import('./pages/Cubo'))
 const Cobertura = lazy(() => import('./pages/Cobertura'))
 const Historico = lazy(() => import('./pages/Historico'))
 const Metodologia = lazy(() => import('./pages/Metodologia'))
+const Contacto = lazy(() => import('./pages/Contacto'))
 
 const page = (el: React.ReactNode) => <Suspense fallback={<Loading />}>{el}</Suspense>
 
@@ -78,6 +79,7 @@ const router = createHashRouter([
       { path: 'cobertura', element: page(<Cobertura />) },
       { path: 'historico', element: page(<Historico />) },
       { path: 'metodologia', element: page(<Metodologia />) },
+      { path: 'contacto', element: page(<Contacto />) },
     ],
   },
 ])
