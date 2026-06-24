@@ -40,12 +40,14 @@ services:
       OR_MODEL: ${OR_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
       # Buzón de contacto → submission autenticada al exim del host (host.docker.internal:587).
       # Emisor qhaway@qhaway.org (con DKIM). Credenciales OCULTAS en el .env del server.
-      CONTACTO_TO: ${CONTACTO_TO:-carlos@cardenas.pe}
+      CONTACTO_TO: ${CONTACTO_TO:-waitasumaq@gmail.com}
+      CONTACTO_CC: ${CONTACTO_CC:-carlos@cardenas.pe}
       SMTP_HOST: ${SMTP_HOST:-host.docker.internal}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-qhaway@qhaway.org}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      CONTACTOS_TOKEN: ${CONTACTOS_TOKEN:-}
       RATE_MAX: "120"
       RATE_WINDOW: "60"
     ports:

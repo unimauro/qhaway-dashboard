@@ -85,10 +85,10 @@ export default function Buzon() {
             </p>
             <div className="mt-4 pt-4 border-t border-brand-500/15 space-y-2 text-[13px]">
               <a
-                href="mailto:carlos@cardenas.pe"
+                href="mailto:waitasumaq@gmail.com"
                 className="flex items-center gap-2 text-ink-600 dark:text-ink-300 hover:text-brand-600 transition"
               >
-                <span aria-hidden>✉️</span> carlos@cardenas.pe
+                <span aria-hidden>✉️</span> waitasumaq@gmail.com
               </a>
               <a
                 href="https://github.com/unimauro/qhaway-dashboard/issues"

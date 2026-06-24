@@ -30,12 +30,16 @@ OR_MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-120b:free")
 # Buzón de contacto: envía por submission autenticada al exim del host
 # (el contenedor lo alcanza por host.docker.internal). La cuenta emisora tiene DKIM
 # → el correo llega a bandeja, no a spam. Credenciales OCULTAS en el .env del server.
-CONTACTO_TO = os.environ.get("CONTACTO_TO", "carlos@cardenas.pe")
+CONTACTO_TO = os.environ.get("CONTACTO_TO", "waitasumaq@gmail.com")
+CONTACTO_CC = os.environ.get("CONTACTO_CC", "carlos@cardenas.pe")  # copia
 SMTP_HOST = os.environ.get("SMTP_HOST", "host.docker.internal")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_FROM = os.environ.get("SMTP_FROM", "qhaway@tiktuy.net")
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
 SMTP_PASS = os.environ.get("SMTP_PASS", "").strip()
+# Token para LEER los mensajes guardados (/api/contactos). Si está vacío, el endpoint
+# queda deshabilitado (404). Se pone en el .env del server, nunca en git.
+CONTACTOS_TOKEN = os.environ.get("CONTACTOS_TOKEN", "").strip()
 # Límite DEDICADO y estricto para el buzón (mucho más bajo que el general): evita
 # que se use como mailbomb contra el destinatario fijo y quemar la reputación DKIM.
 CONTACT_MAX = int(os.environ.get("CONTACT_MAX", "4"))          # mensajes…
@@ -467,6 +471,29 @@ def _throttle(store: dict, ip: str, max_n: int, window: int, msg: str):
 
 # --- Buzón de contacto: el formulario del dashboard envía un correo al observatorio ---
 _contact_hits: dict[str, deque] = {}
+_contactos_ready = False
+
+
+def _save_contacto(nombre: str, correo: str, asunto: str, mensaje: str, ip: str):
+    """Guarda CADA mensaje en PostgreSQL (volumen persistente) para que NO se pierda
+    aunque el correo falle o se borre. Best-effort: si la BD falla, no rompe el envío."""
+    global _contactos_ready
+    try:
+        with psycopg.connect(DB) as conn:
+            with conn.cursor() as cur:
+                if not _contactos_ready:
+                    cur.execute(
+                        "CREATE TABLE IF NOT EXISTS contactos ("
+                        "id bigserial PRIMARY KEY, ts timestamptz DEFAULT now(), "
+                        "nombre text, email text, asunto text, mensaje text, ip text)")
+                    _contactos_ready = True
+                cur.execute(
+                    "INSERT INTO contactos (nombre, email, asunto, mensaje, ip) "
+                    "VALUES (%s, %s, %s, %s, %s)", (nombre, correo, asunto, mensaje, ip))
+            conn.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _contact_throttle(ip: str):
@@ -476,8 +503,9 @@ def _contact_throttle(ip: str):
 
 @app.post("/api/contacto", tags=["Sistema"], summary="Buzón de contacto (envía un correo al observatorio)")
 def contacto(payload: dict, request: Request):
+    ip = client_ip(request)
     # Límite estricto y dedicado por IP (independiente del general): anti-mailbomb.
-    _contact_throttle(client_ip(request))
+    _contact_throttle(ip)
     # Honeypot: campo oculto que un humano deja vacío; si viene lleno = bot → fingimos
     # éxito y NO enviamos nada.
     if str(payload.get("website") or "").strip():
@@ -496,6 +524,8 @@ def contacto(payload: dict, request: Request):
     msg["Subject"] = f"[QHAWAY] {asunto}"
     msg["From"] = Address("QHAWAY · Contacto", addr_spec=SMTP_FROM)
     msg["To"] = CONTACTO_TO
+    if CONTACTO_CC:
+        msg["Cc"] = CONTACTO_CC
     try:
         msg["Reply-To"] = Address(nombre, addr_spec=correo)
     except (ValueError, IndexError):
@@ -504,6 +534,9 @@ def contacto(payload: dict, request: Request):
         "Nuevo mensaje desde el buzón de QHAWAY (qhaway.org)\n\n"
         f"Nombre:  {nombre}\nCorreo:  {correo}\nAsunto:  {asunto}\n\nMensaje:\n{mensaje}\n"
     )
+    # 1) PERSISTIR primero (no se pierde aunque el correo falle), 2) enviar a destino + copia.
+    _save_contacto(nombre, correo, asunto, mensaje, ip)
+    destinos = [CONTACTO_TO] + ([CONTACTO_CC] if CONTACTO_CC else [])
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
             # STARTTLS con contexto sin verificación: es una conexión interna
@@ -511,8 +544,21 @@ def contacto(payload: dict, request: Request):
             s.starttls(context=ssl._create_unverified_context())
             if SMTP_USER:
                 s.login(SMTP_USER, SMTP_PASS)
-            s.send_message(msg, from_addr=SMTP_FROM, to_addrs=[CONTACTO_TO])
+            s.send_message(msg, from_addr=SMTP_FROM, to_addrs=destinos)
     except Exception:  # noqa: BLE001
-        # No revelar la causa interna (auth/conexión/timeout) al cliente.
+        # No revelar la causa interna (auth/conexión/timeout) al cliente. El mensaje
+        # ya quedó guardado en la BD, así que no se pierde.
         raise HTTPException(502, "No se pudo enviar el mensaje ahora. Intenta más tarde.")
     return {"ok": True}
+
+
+@app.get("/api/contactos", include_in_schema=False)
+def listar_contactos(request: Request, token: str = "", limit: int = 100):
+    """Lectura PRIVADA de los mensajes guardados (respaldo por si un correo se pierde).
+    Requiere el token (header X-Contactos-Token o ?token=). Sin token configurado → 404."""
+    sent = request.headers.get("x-contactos-token", "") or token
+    if not CONTACTOS_TOKEN or sent != CONTACTOS_TOKEN:
+        raise HTTPException(404, "no encontrado")  # no revelar que existe
+    limit = max(1, min(int(limit), 500))
+    return q("SELECT id, ts, nombre, email, asunto, mensaje, ip "
+             "FROM contactos ORDER BY id DESC LIMIT %s", (limit,))
