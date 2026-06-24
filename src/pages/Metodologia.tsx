@@ -138,8 +138,8 @@ const FAQ: FaqItem[] = [
     a: 'No. Todos los índices y comparativos del tablero son COMPARATIVOS y descriptivos, no predicciones. Muestran cómo se ordenan los territorios con la información disponible, no qué ocurrirá.',
   },
   {
-    q: '¿Puedo descargar los datos?',
-    a: 'Sí. Los datos derivados se publican abiertos bajo licencia Creative Commons CC BY 4.0: puedes reutilizarlos citando la fuente. Las fuentes primarias conservan sus propias condiciones.',
+    q: '¿Puedo descargar los datos y los gráficos?',
+    a: 'Sí. Muchos módulos tienen un botón para descargar la tabla en CSV (se abre en Excel). Además, cada gráfico se puede guardar como imagen PNG (en alta resolución, para tesis e informes) con el ícono de descarga que aparece arriba a la derecha del gráfico al pasar el cursor. Los datos derivados se publican abiertos bajo licencia Creative Commons CC BY 4.0: puedes reutilizarlos citando la fuente. Las fuentes primarias conservan sus propias condiciones.',
   },
   {
     q: '¿Puedo citarlo en mi tesis?',
