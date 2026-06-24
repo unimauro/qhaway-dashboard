@@ -32,15 +32,9 @@ const NAV = [
   { to: '/metodologia', label: 'Metodología y FAQ', icon: '?' },
 ]
 
-function Logo() {
-  return (
-    <svg viewBox="0 0 512 512" className="w-8 h-8 shrink-0" aria-hidden>
-      <path d="M64 256 C140 150 372 150 448 256 C372 362 140 362 64 256 Z" fill="none" stroke="#5eead4" strokeWidth="26" strokeLinejoin="round" />
-      <path d="M256 156 L356 256 L256 356 L156 256 Z" fill="#fbbf24" />
-      <path d="M256 196 L316 256 L256 316 L196 256 Z" fill="#0f172a" />
-      <circle cx="256" cy="256" r="26" fill="#5eead4" />
-    </svg>
-  )
+// Wordmark oficial de QHAWAY (diseño de Mario para FIEECS-UNI): la "Q" es una máscara andina.
+function Wordmark({ className = 'h-7' }: { className?: string }) {
+  return <img src={`${BASE}qhaway-logo.png`} alt="QHAWAY" className={`${className} w-auto shrink-0`} />
 }
 
 export default function Layout() {
@@ -51,7 +45,7 @@ export default function Layout() {
     <div className="min-h-screen bg-ink-50 dark:bg-ink-950 text-ink-900 dark:text-ink-50">
       {/* Topbar móvil */}
       <header className="lg:hidden sticky top-0 z-40 flex items-center justify-between px-4 h-14 border-b border-ink-200 dark:border-ink-800 bg-white/80 dark:bg-ink-900/80 backdrop-blur">
-        <div className="flex items-center gap-2"><Logo /><span className="font-bold">QHAWAY</span></div>
+        <Wordmark className="h-6" />
         <div className="flex items-center gap-2">
           <button onClick={openSearch} aria-label="Buscar" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">⌕</button>
           <ThemeBtn theme={theme} toggle={toggle} />
@@ -62,12 +56,12 @@ export default function Layout() {
       <div className="lg:flex">
         {/* Sidebar */}
         <aside className={`${open ? 'block' : 'hidden'} lg:block lg:w-64 lg:shrink-0 lg:h-screen lg:sticky lg:top-0 border-r border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-4`}>
-          <div className="hidden lg:flex items-center gap-2 mb-1">
-            <Logo />
-            <div>
-              <p className="font-extrabold leading-none tracking-tight">QHAWAY <span className="text-brand-500">2.0</span></p>
-              <p className="text-[10px] text-ink-400 leading-tight mt-0.5">Observatorio Territorial del Perú</p>
+          <div className="hidden lg:block mb-1">
+            <div className="flex items-end gap-1.5">
+              <Wordmark className="h-8" />
+              <span className="text-sm font-extrabold text-brand-500 leading-none mb-0.5">2.0</span>
             </div>
+            <p className="text-[10px] text-ink-400 leading-tight mt-1">Observatorio Territorial del Perú · FIEECS-UNI</p>
           </div>
           <button
             onClick={openSearch}
