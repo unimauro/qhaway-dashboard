@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function Card({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <div className={`rounded-2xl border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900/60 shadow-sm ${className}`}>
+    <div id={id} className={`rounded-2xl border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900/60 shadow-sm ${className}`}>
       {children}
     </div>
   )

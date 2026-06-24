@@ -1,5 +1,6 @@
 import { getMeta } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
+import Buzon from '../components/Buzon'
 import {
   Card,
   CardHeader,
@@ -149,8 +150,24 @@ const FAQ: FaqItem[] = [
     a: 'Sí. Es un tablero abierto, sin login ni registro, diseñado mobile-first: puedes consultarlo desde el celular tocando los gráficos para ver los tooltips.',
   },
   {
-    q: '¿Cómo reporto un error?',
-    a: 'Abre un issue en el repositorio del proyecto en GitHub describiendo el dato, la página y, si puedes, una captura. Lo revisaremos y corregiremos en el siguiente corte.',
+    q: '¿Cómo reporto un error o me comunico con el equipo?',
+    a: 'Tienes dos vías. Para reportes técnicos puedes abrir un issue en el repositorio de GitHub (con el dato, la página y una captura si puedes). Para consultas, sugerencias, datos o colaboraciones, usa el Buzón de contacto al final de esta página: tu mensaje llega directo al equipo del observatorio por correo, sin servicios de terceros.',
+  },
+  {
+    q: '¿Quién es Ninacha, el asistente que aparece en el tablero?',
+    a: 'Ninacha (del quechua "nina", fuego) es la asistente de IA del observatorio. Resuelve muchas preguntas con reglas locales —al instante y sin costo— y, para las más abiertas, consulta un modelo de lenguaje. Es una ayuda para orientarte en los datos, no una fuente oficial: contrasta siempre sus respuestas con los gráficos y las cifras del propio tablero.',
+  },
+  {
+    q: '¿QHAWAY tiene una API pública para reutilizar los datos?',
+    a: 'Sí. Toda la información se expone como datos abiertos a través de una API REST documentada (OpenAPI/Swagger). Puedes explorarla y probarla en vivo en qhaway.tunky.net/docs (Swagger) o qhaway.tunky.net/redoc. Es de solo lectura, con un límite de tasa razonable por IP; si necesitas volúmenes grandes, descarga los JSON o escríbenos por el buzón.',
+  },
+  {
+    q: '¿Cuál es la dirección oficial del observatorio?',
+    a: 'El dominio oficial es qhaway.org. También existe un espejo en GitHub Pages. Ambos sirven exactamente los mismos datos; qhaway.org es la dirección canónica que recomendamos citar y compartir.',
+  },
+  {
+    q: '¿El observatorio guarda mis datos o me rastrea?',
+    a: 'No. No hay login, ni cookies de seguimiento, ni terceros de analítica invasiva. El Buzón de contacto solo usa el correo que escribes para responderte; el mensaje viaja por el propio servidor de QHAWAY, no por servicios externos.',
   },
 ]
 
@@ -449,7 +466,10 @@ export default function Metodologia() {
         </ul>
       </Card>
 
-      {/* 6. CRÉDITOS Y FUENTES */}
+      {/* 6. BUZÓN DE CONTACTO */}
+      <Buzon />
+
+      {/* 7. CRÉDITOS Y FUENTES */}
       <Card>
         <CardHeader
           title="Créditos, licencia y fuentes"
@@ -496,15 +516,23 @@ export default function Metodologia() {
           </div>
 
           <div>
-            <div className="mb-1 font-medium opacity-80">Reportar un error</div>
-            <a
-              href={GITHUB_ISSUES}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-brand-600 underline decoration-dotted hover:opacity-80"
-            >
-              Abrir un issue en GitHub
-            </a>
+            <div className="mb-1 font-medium opacity-80">Reportar un error o contactarnos</div>
+            <p className="opacity-90">
+              Reportes técnicos:{' '}
+              <a
+                href={GITHUB_ISSUES}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-600 underline decoration-dotted hover:opacity-80"
+              >
+                abre un issue en GitHub
+              </a>
+              . Consultas, sugerencias o colaboraciones:{' '}
+              <a href="#buzon" className="text-brand-600 underline decoration-dotted hover:opacity-80">
+                usa el buzón de contacto
+              </a>
+              .
+            </p>
           </div>
         </div>
       </Card>

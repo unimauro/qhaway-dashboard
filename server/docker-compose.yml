@@ -32,16 +32,27 @@ services:
     container_name: qhaway-api
     environment:
       DATABASE_URL: postgresql://qhaway:${POSTGRES_PASSWORD:-qhaway_local}@qhaway-db:5432/qhaway
-      # Orígenes permitidos (CORS). El dashboard de GitHub Pages + dev local.
-      CORS_ORIGINS: "https://unimauro.github.io,http://localhost:5173,https://qhaway.tunky.net"
+      # Orígenes permitidos (CORS). El dashboard de GitHub Pages + dev local + qhaway.org.
+      CORS_ORIGINS: "https://unimauro.github.io,http://localhost:5173,https://qhaway.tunky.net,https://qhaway.org,https://www.qhaway.org"
       QHAWAY_API_KEY: ${QHAWAY_API_KEY:-}
       # Ninacha (IA): key de OpenRouter OCULTA en el server (desde .env, no se commitea).
       OPENROUTER_KEY: ${OPENROUTER_KEY:-}
       OR_MODEL: ${OR_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+      # Buzón de contacto → submission autenticada al exim del host (host.docker.internal:587).
+      # Emisor qhaway@qhaway.org (con DKIM). Credenciales OCULTAS en el .env del server.
+      CONTACTO_TO: ${CONTACTO_TO:-carlos@cardenas.pe}
+      SMTP_HOST: ${SMTP_HOST:-host.docker.internal}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-qhaway@qhaway.org}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       RATE_MAX: "120"
       RATE_WINDOW: "60"
     ports:
       - "127.0.0.1:8000:8000"   # solo localhost; HestiaCP proxya a qhaway.tunky.net
+    # Permite que el contenedor alcance el exim del host por host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       qhaway-db:
         condition: service_healthy

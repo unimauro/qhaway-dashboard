@@ -3,8 +3,11 @@ Devuelve las mismas formas JSON que consume el dashboard estático, más un
 endpoint de cubo OLAP. Datos estáticos por año → cacheados en memoria.
 """
 import os
+import ssl
 import time
 import functools
+import smtplib
+from email.message import EmailMessage
 from collections import deque
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +24,15 @@ RATE_WINDOW = int(os.environ.get("RATE_WINDOW", "60"))       # segundos
 # Ninacha (IA): key OCULTA en el servidor; el cliente nunca la ve. Modelo gratuito de OpenRouter.
 OPENROUTER_KEY = os.environ.get("OPENROUTER_KEY", "").strip()
 OR_MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-120b:free")
+# Buzón de contacto: envía por submission autenticada al exim del host
+# (el contenedor lo alcanza por host.docker.internal). La cuenta emisora tiene DKIM
+# → el correo llega a bandeja, no a spam. Credenciales OCULTAS en el .env del server.
+CONTACTO_TO = os.environ.get("CONTACTO_TO", "carlos@cardenas.pe")
+SMTP_HOST = os.environ.get("SMTP_HOST", "host.docker.internal")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_FROM = os.environ.get("SMTP_FROM", "qhaway@tiktuy.net")
+SMTP_USER = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASS = os.environ.get("SMTP_PASS", "").strip()
 # El tier gratuito de OpenRouter se satura (429) o deprecia modelos: probamos varios en orden
 # hasta que uno responda. Todos verificados disponibles y :free.
 _OR_LIST = [OR_MODEL, "openai/gpt-oss-120b:free", "google/gemma-4-31b-it:free",
@@ -368,3 +380,36 @@ async def ninacha(payload: dict):
                 continue
             last = f"OpenRouter {r.status_code}"  # 429/404 → siguiente modelo
     raise HTTPException(502, f"IA no disponible ahora ({last}). Intenta en un momento.")
+
+
+# --- Buzón de contacto: el formulario del dashboard envía un correo al observatorio ---
+@app.post("/api/contacto", tags=["Sistema"], summary="Buzón de contacto (envía un correo al observatorio)")
+def contacto(payload: dict):
+    nombre = str(payload.get("nombre") or "").strip()[:120]
+    correo = str(payload.get("email") or "").strip()[:160]
+    asunto = str(payload.get("asunto") or "Mensaje desde QHAWAY").strip()[:160]
+    mensaje = str(payload.get("mensaje") or "").strip()[:5000]
+    if not nombre or not mensaje:
+        raise HTTPException(400, "Faltan el nombre o el mensaje")
+    if "@" not in correo or "." not in correo:
+        raise HTTPException(400, "Correo electrónico inválido")
+    msg = EmailMessage()
+    msg["Subject"] = f"[QHAWAY] {asunto}"
+    msg["From"] = f"QHAWAY · Contacto <{SMTP_FROM}>"
+    msg["To"] = CONTACTO_TO
+    msg["Reply-To"] = f"{nombre} <{correo}>"
+    msg.set_content(
+        "Nuevo mensaje desde el buzón de QHAWAY (qhaway.org)\n\n"
+        f"Nombre:  {nombre}\nCorreo:  {correo}\nAsunto:  {asunto}\n\nMensaje:\n{mensaje}\n"
+    )
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            # STARTTLS con contexto sin verificación: es una conexión interna
+            # contenedor→host por el bridge de Docker, el cert no coincide con la IP.
+            s.starttls(context=ssl._create_unverified_context())
+            if SMTP_USER:
+                s.login(SMTP_USER, SMTP_PASS)
+            s.send_message(msg, from_addr=SMTP_FROM, to_addrs=[CONTACTO_TO])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"No se pudo enviar el mensaje ({type(e).__name__}). Intenta más tarde.")
+    return {"ok": True}
