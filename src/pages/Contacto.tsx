@@ -10,6 +10,12 @@ export default function Contacto() {
         el propio servidor del observatorio, <strong>sin servicios de terceros ni rastreo</strong>.
       </SectionIntro>
       <Buzon />
+      <p className="text-center text-xs text-ink-400">
+        ¿Eres del equipo del observatorio?{' '}
+        <a href="#/mensajes" className="text-brand-600 hover:underline">
+          Ver los mensajes recibidos →
+        </a>
+      </p>
     </div>
   )
 }

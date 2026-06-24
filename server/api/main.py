@@ -32,6 +32,9 @@ OR_MODEL = os.environ.get("OR_MODEL", "openai/gpt-oss-120b:free")
 # → el correo llega a bandeja, no a spam. Credenciales OCULTAS en el .env del server.
 CONTACTO_TO = os.environ.get("CONTACTO_TO", "waitasumaq@gmail.com")
 CONTACTO_CC = os.environ.get("CONTACTO_CC", "carlos@cardenas.pe")  # copia
+# Buzón-archivo PROPIO del portal: copia oculta (BCC) que se acumula en un mailbox real
+# (qhaway@qhaway.org) → se puede ver por webmail. Cada dashboard tiene su propio buzón.
+CONTACTO_ARCHIVE = os.environ.get("CONTACTO_ARCHIVE", "qhaway@qhaway.org")
 SMTP_HOST = os.environ.get("SMTP_HOST", "host.docker.internal")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_FROM = os.environ.get("SMTP_FROM", "qhaway@tiktuy.net")
@@ -536,7 +539,8 @@ def contacto(payload: dict, request: Request):
     )
     # 1) PERSISTIR primero (no se pierde aunque el correo falle), 2) enviar a destino + copia.
     _save_contacto(nombre, correo, asunto, mensaje, ip)
-    destinos = [CONTACTO_TO] + ([CONTACTO_CC] if CONTACTO_CC else [])
+    # Envelope: destino + copia + archivo (BCC al buzón del portal, sin cabecera visible).
+    destinos = [CONTACTO_TO] + [a for a in (CONTACTO_CC, CONTACTO_ARCHIVE) if a]
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
             # STARTTLS con contexto sin verificación: es una conexión interna
