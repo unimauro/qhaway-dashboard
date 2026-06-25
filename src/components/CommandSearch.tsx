@@ -134,7 +134,7 @@ export default function CommandSearch() {
       { id: 'sec-presupuesto', cat: 'seccion', nombre: 'Presupuesto', subtitulo: 'Ejecución del gasto público (SIAF-MEF)', extra: 'pim pia gasto siaf', go: (n) => n('/presupuesto') },
       { id: 'sec-pisos', cat: 'seccion', nombre: 'Pisos altitudinales', subtitulo: 'Las ocho regiones naturales (Pulgar Vidal)', extra: 'altitud regiones naturales', go: (n) => n('/pisos') },
       { id: 'sec-riesgos', cat: 'seccion', nombre: 'Riesgos', subtitulo: 'Amenazas climáticas y geológicas', extra: 'desastres clima', go: (n) => n('/riesgos') },
-      { id: 'sec-prosperidad', cat: 'seccion', nombre: 'Prosperidad', subtitulo: 'IDH, pobreza y vulnerabilidad distrital', extra: 'idh pobreza bienestar', go: (n) => n('/prosperidad') },
+      { id: 'sec-prosperidad', cat: 'seccion', nombre: 'Desarrollo Humano y Densidad del Estado', subtitulo: 'IDH, pobreza, vulnerabilidad y servicios distritales', extra: 'idh pobreza bienestar densidad estado servicios ide prosperidad', go: (n) => n('/prosperidad') },
       { id: 'sec-metodologia', cat: 'seccion', nombre: 'Metodología', subtitulo: 'Fuentes, supuestos y notas', extra: 'fuentes notas', go: (n) => n('/metodologia') },
     ],
     [],

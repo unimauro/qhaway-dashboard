@@ -24,7 +24,7 @@ const NAV = [
   { to: '/pisos', label: 'Pisos Altitudinales', icon: '⛰' },
   { to: '/clima', label: 'Cambio Climático', icon: '🌡' },
   { to: '/riesgos', label: 'Riesgos Territoriales', icon: '◬' },
-  { to: '/prosperidad', label: 'Prosperidad (IPT)', icon: '★' },
+  { to: '/prosperidad', label: 'Desarrollo Humano y Estado', icon: '★' },
   { to: '/explorador', label: 'Explorador Multidimensional', icon: '🔍' },
   { to: '/cubo', label: 'Cubo Presupuestal (OLAP)', icon: '🧊' },
   { to: '/historico', label: 'Evolución Regional 2004-2026', icon: '⏱' },

@@ -215,7 +215,8 @@ def root():
                       "/api/explorador-funcion-meta/{año}", "/api/explorador-fuente-meta/{año}",
                       "/api/cubo?year=&dimension=&nivel=&departamento=",
                       "/api/por-categoria/{año}", "/api/por-tipo-gasto/{año}", "/api/dim-values",
-                      "/api/cubo-n?year=&dim=&by=&measure="],
+                      "/api/cubo-n?year=&dim=&by=&measure=",
+                      "/api/drill?year=&nivel=&categoria=&programa=&funcion=&departamento=&provincia=&distrito="],
         "dashboard": "https://unimauro.github.io/qhaway-dashboard/",
         "fuente": "MEF — Consulta del Gasto (datos abiertos), cargado en PostgreSQL propio (FIEECS-UNI).",
         "licencia": "CC BY 4.0",
@@ -542,6 +543,250 @@ def cubo_n(year: int, response: Response, dim: str = "categoria_ppto",
     response.headers["Cache-Control"] = CACHE_YEAR
     return {"year": year, "dim": dim, "by": by, "measure": measure,
             "columnas": columnas, "filas": filas_ord}
+
+
+# --- Drill jerárquico encadenado: nacional → nivel → categoría → programa/función →
+#     departamento → provincia → distrito → proyecto/actividad ---
+# Decide el SIGUIENTE nivel según qué filtros vienen y devuelve sus hijos agregados.
+# Niveles 0-4 salen de los AGREGADOS (gasto_nivel, res_categoria, gasto_cubo, gasto_distrito);
+# el nivel hoja (proyecto/actividad) toca el cubo granular SOLO por índice (ano, ubigeo).
+# TODO parametrizado: ningún valor de usuario se interpola en el SQL.
+DRILL_LIMIT = int(os.environ.get("DRILL_LIMIT", "500"))
+
+
+def _granular_years() -> set[int]:
+    """Años con cubo granular cargado (gasto_cubo). Cacheado vía _dim_values()."""
+    try:
+        return set(_dim_values().get("granularYears") or [])
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+@ttl_cache
+def _drill_niveles(year: int):
+    # Hijos de la raíz = niveles de gobierno (agregado barato, todos los años).
+    return q("SELECT nivel AS clave, SUM(pim) pim, SUM(devengado) devengado "
+             "FROM gasto_nivel WHERE ano=%s AND nivel IS NOT NULL AND nivel<>'' "
+             "GROUP BY nivel ORDER BY 2 DESC LIMIT %s", (year, DRILL_LIMIT))
+
+
+@ttl_cache
+def _drill_categorias(year: int, nivel: str | None):
+    where = ["ano=%s", "categoria_ppto IS NOT NULL", "categoria_ppto<>''"]
+    params: list = [year]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    return q(f"SELECT categoria_ppto AS clave, SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM res_categoria WHERE {' AND '.join(where)} "
+             f"GROUP BY categoria_ppto ORDER BY 2 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_programas(year: int, nivel: str | None, categoria: str | None):
+    # Programas dentro de (nivel, categoría) desde el cubo granular. Solo años granulares.
+    where = ["ano=%s", "programa IS NOT NULL", "programa<>''"]
+    params: list = [year]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    if categoria:
+        where.append("categoria_ppto=%s"); params.append(categoria)
+    return q(f"SELECT programa AS clave, SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_cubo WHERE {' AND '.join(where)} "
+             f"GROUP BY programa ORDER BY 2 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_funciones(year: int, nivel: str | None, categoria: str | None, programa: str | None):
+    # Funciones dentro de (nivel, categoría, programa) desde el cubo granular.
+    where = ["ano=%s", "funcion IS NOT NULL", "funcion<>''"]
+    params: list = [year]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    if categoria:
+        where.append("categoria_ppto=%s"); params.append(categoria)
+    if programa:
+        where.append("programa=%s"); params.append(programa)
+    return q(f"SELECT funcion AS clave, SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_cubo WHERE {' AND '.join(where)} "
+             f"GROUP BY funcion ORDER BY 2 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_departamentos(year: int, nivel: str | None):
+    # Departamentos (ejecutora) desde gasto_distrito. Atribución por ejecutora.
+    where = ["ano=%s", "departamento IS NOT NULL", "departamento<>''"]
+    params: list = [year]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    return q(f"SELECT departamento AS clave, MIN(substr(ubigeo,1,2)) AS ubigeo, "
+             f"SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_distrito WHERE {' AND '.join(where)} "
+             f"GROUP BY departamento ORDER BY 3 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_provincias(year: int, nivel: str | None, departamento: str):
+    where = ["ano=%s", "departamento=%s", "provincia IS NOT NULL", "provincia<>''"]
+    params: list = [year, departamento]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    return q(f"SELECT provincia AS clave, MIN(substr(ubigeo,1,4)) AS ubigeo, "
+             f"SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_distrito WHERE {' AND '.join(where)} "
+             f"GROUP BY provincia ORDER BY 3 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_distritos(year: int, nivel: str | None, departamento: str, provincia: str):
+    where = ["ano=%s", "departamento=%s", "provincia=%s",
+             "distrito IS NOT NULL", "distrito<>''"]
+    params: list = [year, departamento, provincia]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    return q(f"SELECT distrito AS clave, MIN(ubigeo) AS ubigeo, "
+             f"SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_distrito WHERE {' AND '.join(where)} "
+             f"GROUP BY distrito ORDER BY 3 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+@ttl_cache
+def _drill_proyectos(year: int, ubigeo: str, nivel: str | None,
+                     categoria: str | None, programa: str | None, funcion: str | None):
+    # Nivel hoja: proyecto/actividad desde el cubo granular, por índice (ano, ubigeo).
+    where = ["ano=%s", "ubigeo=%s"]
+    params: list = [year, ubigeo]
+    if nivel:
+        where.append("nivel=%s"); params.append(nivel)
+    if categoria:
+        where.append("categoria_ppto=%s"); params.append(categoria)
+    if programa:
+        where.append("programa=%s"); params.append(programa)
+    if funcion:
+        where.append("funcion=%s"); params.append(funcion)
+    return q(f"SELECT COALESCE(NULLIF(producto_proyecto,''), actividad, '—') AS clave, "
+             f"SUM(pim) pim, SUM(devengado) devengado "
+             f"FROM gasto_cubo WHERE {' AND '.join(where)} "
+             f"GROUP BY 1 ORDER BY 2 DESC LIMIT %s",
+             tuple(params) + (DRILL_LIMIT,))
+
+
+def _drill_items(rows, has_children: bool):
+    """Normaliza filas a la forma del contrato (clave, ubigeo?, pim, devengado, hasChildren)."""
+    out = []
+    for r in rows:
+        item = {
+            "clave": r.get("clave"),
+            "pim": float(r["pim"] or 0),
+            "devengado": float(r["devengado"] or 0),
+            "hasChildren": has_children,
+        }
+        if "ubigeo" in r and r.get("ubigeo") is not None:
+            item["ubigeo"] = r["ubigeo"]
+        out.append(item)
+    return out
+
+
+@app.get("/api/drill", tags=["Territorio"],
+         summary="Drill jerárquico encadenado: nivel → categoría → programa/función → "
+                 "depto → prov → distrito → proyecto/actividad")
+def drill(year: int, response: Response,
+          nivel: str | None = None, categoria: str | None = None,
+          programa: str | None = None, funcion: str | None = None,
+          departamento: str | None = None, provincia: str | None = None,
+          distrito: str | None = None):
+    """Drill encadenado del presupuesto. Según qué filtros vengan, decide el SIGUIENTE nivel
+    y devuelve sus hijos agregados (pim, devengado). La rama territorial es por **ejecutora**
+    (gasto_distrito); el nivel hoja (proyecto/actividad) sale del cubo granular por índice
+    (ano, ubigeo) y solo existe en años granulares. `distrito` debe ser el **ubigeo** del distrito."""
+    _check_year(year)
+    granular = year in _granular_years()
+    filtros = {k: v for k, v in (
+        ("nivel", nivel), ("categoria", categoria), ("programa", programa),
+        ("funcion", funcion), ("departamento", departamento),
+        ("provincia", provincia), ("distrito", distrito)) if v}
+    response.headers["Cache-Control"] = CACHE_YEAR
+
+    def envelope(drill_level, next_dim, items, *, atribucion=None,
+                 granular_flag=None, aviso=None):
+        body = {
+            "year": year, "drillLevel": drill_level, "nextDimension": next_dim,
+            "atribucion": atribucion, "granular": granular_flag if granular_flag is not None else granular,
+            "filtros": filtros, "items": items,
+        }
+        if aviso:
+            body["aviso"] = aviso
+        return body
+
+    # --- Rama territorial (departamento → provincia → distrito → proyecto) ---
+    if distrito:
+        # Nivel hoja: proyecto/actividad. Requiere cubo granular y el índice (ano, ubigeo).
+        if not granular:
+            return envelope("proyecto", "proyecto", [], atribucion="ejecutora",
+                            granular_flag=False,
+                            aviso=f"El detalle de proyecto/actividad solo existe para años "
+                                  f"granulares; {year} no tiene cubo cargado.")
+        rows = _drill_proyectos(year, distrito, nivel, categoria, programa, funcion)
+        return envelope("proyecto", "proyecto", _drill_items(rows, False),
+                        atribucion="ejecutora")
+
+    if provincia:
+        if not departamento:
+            raise HTTPException(400, "provincia requiere también departamento")
+        rows = _drill_distritos(year, nivel, departamento, provincia)
+        return envelope("distrito", "distrito",
+                        _drill_items(rows, granular), atribucion="ejecutora")
+
+    if departamento:
+        rows = _drill_provincias(year, nivel, departamento)
+        return envelope("provincia", "provincia",
+                        _drill_items(rows, True), atribucion="ejecutora")
+
+    # --- Rama presupuestal (nivel → categoría → programa/función) ---
+    if funcion:
+        # Tras función, el drill continúa por territorio (departamentos ejecutora).
+        rows = _drill_departamentos(year, nivel)
+        return envelope("departamento", "departamento",
+                        _drill_items(rows, True), atribucion="ejecutora")
+
+    if programa:
+        # Dentro de un programa → funciones (granular). Si no hay granular, salta a territorio.
+        if granular:
+            rows = _drill_funciones(year, nivel, categoria, programa)
+            if rows:
+                return envelope("funcion", "funcion", _drill_items(rows, True))
+        rows = _drill_departamentos(year, nivel)
+        return envelope("departamento", "departamento",
+                        _drill_items(rows, True), atribucion="ejecutora")
+
+    if categoria:
+        # Dentro de una categoría → programas (granular). Si no hay granular, avisa.
+        if not granular:
+            return envelope("programa", "programa", [], granular_flag=False,
+                            aviso=f"El desglose por programa requiere cubo granular; "
+                                  f"{year} no lo tiene. Filtra por departamento para "
+                                  f"continuar el drill territorial.")
+        rows = _drill_programas(year, nivel, categoria)
+        return envelope("programa", "programa", _drill_items(rows, True))
+
+    if nivel:
+        # Tras nivel → categorías (resumen del cubo, solo años granulares).
+        if not granular:
+            return envelope("categoria", "categoria", [], granular_flag=False,
+                            aviso=f"El desglose por categoría presupuestal solo está "
+                                  f"disponible para años granulares; {year} no lo tiene. "
+                                  f"Filtra por departamento para el drill territorial.")
+        rows = _drill_categorias(year, nivel)
+        return envelope("categoria", "categoria", _drill_items(rows, True))
+
+    # --- Raíz: sin filtros → niveles de gobierno ---
+    rows = _drill_niveles(year)
+    return envelope("nivel", "nivel", _drill_items(rows, True))
 
 
 # --- Ninacha 🔥: asistente IA (proxy a OpenRouter, key oculta en el servidor) ---

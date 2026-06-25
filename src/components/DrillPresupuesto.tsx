@@ -62,46 +62,58 @@ function useApi<T>(path: string | null, deps: unknown[]): FetchState<T> {
 /* ───────────────────────── Tipos del contrato ───────────────────────── */
 
 interface DimValor { valor: string }
-interface DimDepto { ubigeo: string; valor: string }
 interface DimValues {
   categoria_ppto: DimValor[]
   tipo_gasto: DimValor[]
   funcion: DimValor[]
   nivel: DimValor[]
-  departamento: DimDepto[]
   granularYears: number[]
 }
-interface PorCategoria { nivel: string; categoria: string; pim: number; devengado: number; girado: number }
-interface PorDistritoRow {
-  ubigeo: string
-  departamento: string
-  provincia: string
-  distrito: string
-  nivel: string
+
+/** Forma de /api/drill. */
+type DrillDim = 'nivel' | 'categoria' | 'programa' | 'funcion' | 'departamento' | 'provincia' | 'distrito' | 'proyecto'
+interface DrillItem {
+  clave: string
+  ubigeo?: string
   pim: number
   devengado: number
-  girado?: number
+  hasChildren: boolean
+}
+interface DrillResponse {
+  year: number
+  drillLevel: DrillDim
+  nextDimension: DrillDim
+  atribucion: 'ejecutora' | null
+  granular: boolean
+  filtros: Record<string, string>
+  items: DrillItem[]
+  aviso?: string
 }
 
 /* ───────────────────────── Modelo del drill ───────────────────────── */
 
-// Pasos de la jerarquía. Cada paso muestra los "hijos" del nivel anterior.
-type Step = 'nivel' | 'categoria' | 'funcion' | 'departamento' | 'provincia' | 'distrito'
-const STEP_ORDER: Step[] = ['nivel', 'categoria', 'funcion', 'departamento', 'provincia', 'distrito']
+// Pasos de la jerarquía tal como los devuelve el backend.
+type Step = DrillDim
 const STEP_LABEL: Record<Step, string> = {
   nivel: 'Nivel de gobierno',
   categoria: 'Categoría presupuestal',
+  programa: 'Programa presupuestal',
   funcion: 'Función',
   departamento: 'Departamento',
   provincia: 'Provincia',
   distrito: 'Distrito',
+  proyecto: 'Proyecto / Actividad',
 }
 const STEP_SINGULAR: Record<Step, string> = {
-  nivel: 'nivel', categoria: 'categoría', funcion: 'función',
+  nivel: 'nivel', categoria: 'categoría', programa: 'programa', funcion: 'función',
   departamento: 'departamento', provincia: 'provincia', distrito: 'distrito',
+  proyecto: 'proyecto',
 }
 
-interface Row { id: string; nombre: string; pim: number; dev: number; n: number }
+// Cada entrada de la pila guarda el paso elegido y la clave/ubigeo de la fila pulsada.
+interface PathEntry { step: Step; clave: string; ubigeo?: string }
+
+interface Row { id: string; nombre: string; ubigeo?: string; pim: number; dev: number; hasChildren: boolean }
 
 const NIVELES_FIJOS = ['GOBIERNO NACIONAL', 'GOBIERNOS REGIONALES', 'GOBIERNOS LOCALES']
 
@@ -123,144 +135,74 @@ export default function DrillPresupuesto() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dims.status])
 
-  // Filtros globales
+  // Filtros globales de cabecera (se inyectan como filtros del drill desde la raíz)
   const [fNivel, setFNivel] = useState<string>('Todos')
   const [fCategoria, setFCategoria] = useState<string>('Todas')
-  const [fTipoGasto, setFTipoGasto] = useState<string>('Todos')
   const [fFuncion, setFFuncion] = useState<string>('Todas')
 
-  // Pila de navegación: cada entrada es {step, id, nombre} del valor elegido en ese paso.
-  const [path, setPath] = useState<{ step: Step; id: string; nombre: string }[]>([])
+  // Pila de navegación: cada entrada es {step, clave, ubigeo?} del valor elegido.
+  const [path, setPath] = useState<PathEntry[]>([])
 
-  // El paso ACTUAL es el siguiente al último de la pila.
-  const currentStep: Step = STEP_ORDER[path.length] ?? 'distrito'
-  const isLeaf = currentStep === 'distrito' && path.length >= STEP_ORDER.length - 1
+  // Construye los query params de /api/drill a partir de la ruta + filtros de cabecera.
+  // Para la rama territorial, departamento/provincia usan el NOMBRE (clave) y distrito el ubigeo.
+  const drillQuery = useMemo(() => {
+    const p = new URLSearchParams()
+    p.set('year', String(year))
+    const fromPath = (s: Step) => path.find((e) => e.step === s)
+    // Presupuestal
+    const nivel = fromPath('nivel')?.clave ?? (fNivel !== 'Todos' ? fNivel : undefined)
+    const categoria = fromPath('categoria')?.clave ?? (fCategoria !== 'Todas' ? fCategoria : undefined)
+    const programa = fromPath('programa')?.clave
+    const funcion = fromPath('funcion')?.clave ?? (fFuncion !== 'Todas' ? fFuncion : undefined)
+    // Territorial (ejecutora): departamento y provincia por NOMBRE, distrito por UBIGEO.
+    const departamento = fromPath('departamento')?.clave
+    const provincia = fromPath('provincia')?.clave
+    const distrito = fromPath('distrito')?.ubigeo
+    if (nivel) p.set('nivel', nivel)
+    if (categoria) p.set('categoria', categoria)
+    if (programa) p.set('programa', programa)
+    if (funcion) p.set('funcion', funcion)
+    if (departamento) p.set('departamento', departamento)
+    if (provincia) p.set('provincia', provincia)
+    if (distrito) p.set('distrito', distrito)
+    return p.toString()
+  }, [path, year, fNivel, fCategoria, fFuncion])
 
-  // Selecciones efectivas (combinan filtros globales + ruta navegada)
-  const sel = useMemo(() => {
-    const get = (s: Step) => path.find((p) => p.step === s)?.nombre
-    return {
-      nivel: get('nivel') ?? (fNivel !== 'Todos' ? fNivel : undefined),
-      categoria: get('categoria') ?? (fCategoria !== 'Todas' ? fCategoria : undefined),
-      funcion: get('funcion') ?? (fFuncion !== 'Todas' ? fFuncion : undefined),
-      departamentoUbigeo: path.find((p) => p.step === 'departamento')?.id,
-      provinciaUbigeo: path.find((p) => p.step === 'provincia')?.id,
-    }
-  }, [path, fNivel, fCategoria, fFuncion])
-
-  /* ── Carga de datos según el paso territorial vs. presupuestal ──
-     - 'categoria' usa /api/por-categoria/{year}
-     - 'departamento'/'provincia'/'distrito' usan /api/por-distrito/{year}
-     - 'nivel' se deriva de cualquiera de los dos (lista fija)
-     - 'funcion' usa la dimensión (dim-values) como lista, sin medida cruzada → aviso
-  */
-  const needCategoria = currentStep === 'categoria'
-  const needDistrito = currentStep === 'departamento' || currentStep === 'provincia' || currentStep === 'distrito'
-
-  const cat = useApi<PorCategoria[]>(needCategoria ? `/api/por-categoria/${year}` : null, [needCategoria, year])
-  const dist = useApi<PorDistritoRow[]>(needDistrito ? `/api/por-distrito/${year}` : null, [needDistrito, year])
-
-  // Para el paso 'nivel' tomamos los niveles fijos (siempre disponibles).
-  // Para el total mostramos, si tenemos categoria/distrito cargado, el agregado por nivel.
-  const nivelSource = useApi<PorCategoria[]>(currentStep === 'nivel' ? `/api/por-categoria/${year}` : null, [currentStep, year])
+  const drill = useApi<DrillResponse>(`/api/drill?${drillQuery}`, [drillQuery])
 
   /* ── Construcción de las filas del nivel actual ── */
-  const built = useMemo<{ rows: Row[]; note?: string; missing?: boolean }>(() => {
-    const filtNivel = (n: string) => !sel.nivel || n === sel.nivel
+  const resp = drill.status === 'ok' ? drill.data : null
+  const currentStep: Step = resp?.nextDimension ?? 'nivel'
 
-    if (currentStep === 'nivel') {
-      // Agrega por nivel de gobierno. Usa categoria como fuente de medida si está; si no, lista fija.
-      if (nivelSource.status === 'missing') return { rows: [], missing: true }
-      const m = new Map<string, Row>()
-      const src = nivelSource.status === 'ok' ? nivelSource.data : []
-      for (const r of src) {
-        const c = m.get(r.nivel) ?? { id: r.nivel, nombre: r.nivel, pim: 0, dev: 0, n: 0 }
-        c.pim += r.pim || 0; c.dev += r.devengado || 0; c.n += 1; m.set(r.nivel, c)
-      }
-      // Garantiza que aparezcan los 3 niveles aunque la API no los traiga.
-      for (const n of NIVELES_FIJOS) if (!m.has(n)) m.set(n, { id: n, nombre: n, pim: 0, dev: 0, n: 0 })
-      return { rows: [...m.values()].sort((a, b) => b.pim - a.pim) }
-    }
+  const rows: Row[] = useMemo(() => {
+    if (!resp) return []
+    return resp.items.map((it) => ({
+      id: it.ubigeo ?? it.clave,
+      nombre: it.clave,
+      ubigeo: it.ubigeo,
+      pim: it.pim || 0,
+      dev: it.devengado || 0,
+      hasChildren: it.hasChildren,
+    }))
+  }, [resp])
 
-    if (currentStep === 'categoria') {
-      if (cat.status === 'missing') return { rows: [], missing: true }
-      if (cat.status !== 'ok') return { rows: [] }
-      const m = new Map<string, Row>()
-      for (const r of cat.data) {
-        if (!filtNivel(r.nivel)) continue
-        const c = m.get(r.categoria) ?? { id: r.categoria, nombre: r.categoria, pim: 0, dev: 0, n: 0 }
-        c.pim += r.pim || 0; c.dev += r.devengado || 0; c.n += 1; m.set(r.categoria, c)
-      }
-      return { rows: [...m.values()].sort((a, b) => b.pim - a.pim) }
-    }
-
-    if (currentStep === 'funcion') {
-      // No hay endpoint que cruce función×(nivel+categoría) con medida garantizada.
-      // Mostramos la lista de funciones de la dimensión y dejamos avanzar al territorio.
-      const fns = dims.status === 'ok' ? dims.data.funcion : []
-      const rows: Row[] = fns.map((f) => ({ id: f.valor, nombre: f.valor, pim: 0, dev: 0, n: 0 }))
-      return {
-        rows: rows.sort((a, b) => a.nombre.localeCompare(b.nombre)),
-        note: 'La función se muestra como dimensión de navegación; el desglose territorial de abajo no se recalcula por función (no hay tabla cruzada función×territorio). Elige una y continúa, o sáltala.',
-      }
-    }
-
-    // Territoriales: por-distrito
-    if (dist.status === 'missing') return { rows: [], missing: true }
-    if (dist.status !== 'ok') return { rows: [] }
-    const rowsAll = dist.data.filter((r) => filtNivel(r.nivel))
-
-    if (currentStep === 'departamento') {
-      const m = new Map<string, Row>()
-      for (const r of rowsAll) {
-        const id = r.ubigeo.slice(0, 2)
-        const c = m.get(id) ?? { id, nombre: r.departamento, pim: 0, dev: 0, n: 0 }
-        c.pim += r.pim || 0; c.dev += r.devengado || 0; c.n += 1; m.set(id, c)
-      }
-      return { rows: [...m.values()].sort((a, b) => b.pim - a.pim) }
-    }
-    if (currentStep === 'provincia') {
-      const dep = sel.departamentoUbigeo
-      const m = new Map<string, Row>()
-      for (const r of rowsAll) {
-        if (dep && r.ubigeo.slice(0, 2) !== dep) continue
-        const id = r.ubigeo.slice(0, 4)
-        const c = m.get(id) ?? { id, nombre: r.provincia, pim: 0, dev: 0, n: 0 }
-        c.pim += r.pim || 0; c.dev += r.devengado || 0; c.n += 1; m.set(id, c)
-      }
-      return { rows: [...m.values()].sort((a, b) => b.pim - a.pim) }
-    }
-    // distrito (hoja)
-    const prov = sel.provinciaUbigeo
-    const m = new Map<string, Row>()
-    for (const r of rowsAll) {
-      if (prov && r.ubigeo.slice(0, 4) !== prov) continue
-      const c = m.get(r.ubigeo) ?? { id: r.ubigeo, nombre: r.distrito, pim: 0, dev: 0, n: 0 }
-      c.pim += r.pim || 0; c.dev += r.devengado || 0; c.n += 1; m.set(r.ubigeo, c)
-    }
-    return { rows: [...m.values()].sort((a, b) => b.pim - a.pim) }
-  }, [currentStep, cat, dist, nivelSource, dims, sel])
-
-  const rows = built.rows
   const totalPim = rows.reduce((s, r) => s + r.pim, 0)
   const totalDev = rows.reduce((s, r) => s + r.dev, 0)
   const maxPim = Math.max(1, ...rows.map((r) => r.pim))
 
-  /* ── Estado de carga del paso actual ── */
-  const activeState: FetchState<unknown> =
-    currentStep === 'nivel' ? nivelSource
-    : currentStep === 'categoria' ? cat
-    : currentStep === 'funcion' ? dims
-    : dist
-  const loading = activeState.status === 'loading'
-  const missing = built.missing || activeState.status === 'missing'
-  const errored = activeState.status === 'error'
+  /* ── Estado de carga / vacío / faltante / error ── */
+  const loading = drill.status === 'loading'
+  const missing = drill.status === 'missing'   // /api/drill aún no desplegado (404)
+  const errored = drill.status === 'error'
+  const territorial = currentStep === 'departamento' || currentStep === 'provincia'
+    || currentStep === 'distrito' || currentStep === 'proyecto' || resp?.atribucion === 'ejecutora'
+  const aviso = resp?.aviso
 
   /* ── Navegación ── */
   const bajar = useCallback((r: Row) => {
-    if (isLeaf) return
-    setPath((p) => [...p, { step: currentStep, id: r.id, nombre: r.nombre }])
-  }, [currentStep, isLeaf])
+    if (!resp || !r.hasChildren) return
+    setPath((p) => [...p, { step: resp.nextDimension, clave: r.nombre, ubigeo: r.ubigeo }])
+  }, [resp])
 
   const irA = useCallback((depth: number) => {
     setPath((p) => p.slice(0, depth))
@@ -269,12 +211,11 @@ export default function DrillPresupuesto() {
   const volver = useCallback(() => setPath((p) => p.slice(0, -1)), [])
 
   // Reset de la ruta al cambiar de año o filtros de cabecera
-  useEffect(() => { setPath([]) }, [year, fNivel, fCategoria, fTipoGasto, fFuncion])
+  useEffect(() => { setPath([]) }, [year, fNivel, fCategoria, fFuncion])
 
-  /* ── Año granular: ¿pidió un año sin detalle? ── */
+  /* ── Año granular: ¿pidió un año sin detalle granular? ── */
   const granularKnown = granularYears.length > 0
   const yearTieneGranular = !granularKnown || granularYears.includes(year)
-  const necesitaGranular = currentStep === 'nivel' || currentStep === 'categoria'
 
   /* ── Selectores ── */
   const yearOpts = useMemo(() => {
@@ -292,10 +233,6 @@ export default function DrillPresupuesto() {
     const base = dims.status === 'ok' ? dims.data.categoria_ppto.map((c) => c.valor) : []
     return [{ value: 'Todas', label: 'Todas las categorías' }, ...base.map((v) => ({ value: v, label: v }))]
   }, [dims])
-  const tipoGastoOpts = useMemo(() => {
-    const base = dims.status === 'ok' ? dims.data.tipo_gasto.map((t) => t.valor) : []
-    return [{ value: 'Todos', label: 'Todos los tipos de gasto' }, ...base.map((v) => ({ value: v, label: v }))]
-  }, [dims])
   const funcionOpts = useMemo(() => {
     const base = dims.status === 'ok' ? dims.data.funcion.map((f) => f.valor) : []
     return [{ value: 'Todas', label: 'Todas las funciones' }, ...base.map((v) => ({ value: v, label: v }))]
@@ -303,7 +240,7 @@ export default function DrillPresupuesto() {
 
   /* ── CSV del nivel actual ── */
   const descargar = () => {
-    const rutaTxt = path.map((p) => p.nombre).join('-').replace(/\s+/g, '_').slice(0, 60)
+    const rutaTxt = path.map((p) => p.clave).join('-').replace(/\s+/g, '_').slice(0, 60)
     downloadCSV(
       `qhaway-drill-${currentStep}${rutaTxt ? '-' + rutaTxt : ''}-${year}`,
       [
@@ -320,19 +257,18 @@ export default function DrillPresupuesto() {
     )
   }
 
-  const territorial = currentStep === 'departamento' || currentStep === 'provincia' || currentStep === 'distrito'
-
   return (
     <Card>
       <CardHeader
         title="Explorador de presupuesto — drill jerárquico"
-        subtitle={`Nacional → nivel → categoría → función → departamento → provincia → distrito · ${year}`}
+        subtitle={`Nacional → nivel → categoría → programa → función → departamento → provincia → distrito → proyecto · ${year}`}
         help={
           <HelpTip>
             Navega el presupuesto encadenando niveles: haz clic en una fila para profundizar y usa
             las migas (o «volver») para retroceder. Cada paso muestra el <strong>PIM</strong> y el
-            <strong> devengado</strong> de sus hijos. Los pasos de categoría y nivel solo existen para
-            los años con detalle granular (p. ej. 2025). El desglose territorial es por
+            <strong> devengado</strong> de sus hijos, calculados en vivo por el servidor
+            (<code>/api/drill</code>). El detalle de categoría, programa, función y proyecto solo
+            existe para los años con cubo granular (p. ej. 2025). El desglose territorial es por
             <strong> unidad ejecutora</strong>, no por lugar de obra.
           </HelpTip>
         }
@@ -353,17 +289,17 @@ export default function DrillPresupuesto() {
           <Select<number> value={year} onChange={setYear} options={yearOpts} label="Año" />
           <Select<string> value={fNivel} onChange={setFNivel} options={nivelOpts} label="Nivel" />
           <Select<string> value={fCategoria} onChange={setFCategoria} options={categoriaOpts} label="Categoría" />
-          <Select<string> value={fTipoGasto} onChange={setFTipoGasto} options={tipoGastoOpts} label="Tipo de gasto" />
           <Select<string> value={fFuncion} onChange={setFFuncion} options={funcionOpts} label="Función" />
         </div>
 
         {/* Aviso de año sin granularidad */}
-        {granularKnown && !yearTieneGranular && necesitaGranular && (
+        {granularKnown && !yearTieneGranular && (
           <p className="mb-3 text-xs">
             <Pill tone="warn">año sin detalle</Pill>{' '}
             <span className="text-ink-400">
-              El desglose por nivel y categoría solo está disponible para {granularYears.join(', ')}.
-              Para {year} ese detalle no existe; cambia de año arriba.
+              El desglose por categoría, programa, función y proyecto solo está disponible para
+              {' '}{granularYears.join(', ')}. Para {year} el drill llega hasta el detalle
+              territorial (departamento → provincia → distrito) por ejecutora.
             </span>
           </p>
         )}
@@ -377,7 +313,7 @@ export default function DrillPresupuesto() {
             Inicio
           </button>
           {path.map((p, i) => (
-            <span key={p.step} className="inline-flex items-center gap-1">
+            <span key={`${p.step}-${i}`} className="inline-flex items-center gap-1">
               <span className="text-ink-300">›</span>
               {i < path.length - 1 ? (
                 <button
@@ -385,11 +321,11 @@ export default function DrillPresupuesto() {
                   className="font-medium text-brand-600 dark:text-brand-300 hover:underline"
                   title={STEP_LABEL[p.step]}
                 >
-                  {niceNivel(p.nombre)}
+                  {niceNivel(p.clave)}
                 </button>
               ) : (
                 <span className="font-medium text-ink-700 dark:text-ink-200" title={STEP_LABEL[p.step]}>
-                  {niceNivel(p.nombre)}
+                  {niceNivel(p.clave)}
                 </span>
               )}
             </span>
@@ -410,10 +346,10 @@ export default function DrillPresupuesto() {
           </span>
         </div>
 
-        {/* Nota del paso (p. ej. función como dimensión) */}
-        {built.note && (
+        {/* Aviso del backend (p. ej. nivel granular no disponible para este año) */}
+        {aviso && (
           <p className="mb-3 text-[11px] text-ink-400">
-            <Pill tone="neutral">nota</Pill> {built.note}
+            <Pill tone="neutral">nota</Pill> {aviso}
           </p>
         )}
 
@@ -441,19 +377,17 @@ export default function DrillPresupuesto() {
             <div className="max-h-[460px] overflow-auto rounded-lg border border-ink-200 dark:border-ink-800 divide-y divide-ink-100 dark:divide-ink-800/60">
               {rows.map((r) => {
                 const frac = ejecucion(r.dev, r.pim)
+                const clickable = r.hasChildren
                 return (
                   <button
                     key={r.id}
                     onClick={() => bajar(r)}
-                    disabled={isLeaf}
-                    className={`w-full text-left px-3 py-2 ${isLeaf ? 'cursor-default' : 'hover:bg-ink-50 dark:hover:bg-ink-800/50'} transition`}
+                    disabled={!clickable}
+                    className={`w-full text-left px-3 py-2 ${!clickable ? 'cursor-default' : 'hover:bg-ink-50 dark:hover:bg-ink-800/50'} transition`}
                   >
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="font-medium text-ink-800 dark:text-ink-100 truncate">
                         {niceNivel(r.nombre)}
-                        {!isLeaf && r.n > 0 && currentStep !== 'categoria' && currentStep !== 'nivel' && (
-                          <span className="text-ink-400 font-normal"> · {r.n} reg.</span>
-                        )}
                       </span>
                       <span className="shrink-0 tabular-nums text-ink-900 dark:text-ink-50">{solesCompact(r.pim)}</span>
                     </div>
@@ -462,9 +396,9 @@ export default function DrillPresupuesto() {
                         <div className="h-full rounded-full bg-brand-500" style={{ width: `${(r.pim / maxPim) * 100}%` }} />
                       </div>
                       <span className="shrink-0 text-[11px] text-ink-400 tabular-nums">
-                        {r.pim > 0 ? <>{soles(r.dev)} dev · {pct(frac)}</> : 'dimensión'}
+                        {r.pim > 0 ? <>{soles(r.dev)} dev · {pct(frac)}</> : '—'}
                       </span>
-                      {!isLeaf && <span className="shrink-0 text-brand-500">›</span>}
+                      {clickable && <span className="shrink-0 text-brand-500">›</span>}
                     </div>
                   </button>
                 )
@@ -473,12 +407,12 @@ export default function DrillPresupuesto() {
           </>
         )}
 
-        {/* Atribución territorial */}
+        {/* Atribución territorial (ejecutora) */}
         {territorial && (
           <p className="mt-2 text-[11px] text-ink-400">
-            <Pill tone="warn">aprox. por ejecutora</Pill> Provincia y distrito reflejan la
-            <strong> unidad ejecutora</strong> (dónde se administra el gasto), no necesariamente el
-            lugar físico donde se ejecuta la obra.
+            <Pill tone="warn">aprox. por ejecutora</Pill> Departamento, provincia, distrito y
+            proyecto reflejan la <strong>unidad ejecutora</strong> (dónde se administra el gasto),
+            no necesariamente el lugar físico donde se ejecuta la obra.
           </p>
         )}
       </div>
@@ -493,9 +427,9 @@ function EnPreparacion({ step }: { step: Step }) {
     <div className="px-4 py-10 text-center text-sm text-ink-400">
       <Pill tone="neutral">función en preparación</Pill>
       <p className="mt-2 max-w-md mx-auto">
-        El desglose por <strong>{STEP_SINGULAR[step]}</strong> aún no está publicado en el servidor
+        El drill jerárquico (<code>/api/drill</code>) aún no está publicado en el servidor
         (el endpoint responde 404). Esta vista se activará en cuanto el backend lo despliegue; el
-        resto del explorador sigue funcionando.
+        resto del explorador sigue funcionando. Paso pendiente: <strong>{STEP_SINGULAR[step]}</strong>.
       </p>
     </div>
   )

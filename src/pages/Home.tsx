@@ -39,8 +39,8 @@ const MODULOS = [
   {
     to: '/prosperidad',
     icon: '★',
-    titulo: 'Prosperidad (IPT)',
-    frase: 'Índice de Prosperidad Territorial: desarrollo humano, pobreza y vulnerabilidad alimentaria por distrito.',
+    titulo: 'Desarrollo Humano y Densidad del Estado',
+    frase: 'Tablero de indicadores citables por distrito: IDH (PNUD), pobreza y vulnerabilidad (INEI); densidad del Estado y servicios en preparación.',
   },
   {
     to: '/explorador',
@@ -271,7 +271,7 @@ export default function Home() {
                 <strong>Dato real vs. estimación.</strong> Lo que es aproximación o
                 supuesto metodológico va marcado con <Pill tone="warn">aprox.</Pill>
                 (p. ej. el piso altitudinal asignado por la altitud de la capital
-                distrital o el IPT cuando es parcial).
+                distrital o los indicadores aún en preparación).
               </span>
             </li>
             <li className="flex gap-2">
