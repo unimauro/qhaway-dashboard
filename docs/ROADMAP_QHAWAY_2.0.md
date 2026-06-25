@@ -62,12 +62,18 @@ Leyenda: ✅ hecho · 🟢 hecho, falta exponer en UI · 🟡 parcial (falta sum
 | **Navegación jerárquica** nacional→…→proyecto en distrito | 🔴 | UI de drill encadenado | — |
 
 ### Módulo 2 — Cambio Climático (clasificación OFICIAL, no solo función Ambiente)
+> **RECLASIFICADO (25-jun-2026): de ⛔ bloqueado a 🟡 factible.** El clasificador temático de
+> clima NO viene en el CSV crudo de gasto, PERO sí está en **Consulta Amigable** (apps5.mineco.gob.pe)
+> como un corte temático — la misma fuente que ya scrapeamos para Programa Presupuestal. Se trae
+> con un scraper propio (estilo `scraper_programa.py`). El Excel de Kely sería atajo/validación, no requisito.
+
 | Sub-ítem | Estado | Qué falta | Fuente |
 |---|---|---|---|
-| Adaptación / Mitigación / Ambas | ⛔ | **clasificador temático del MEF** (no viene en el CSV de gasto) | MEF temático / Excel Kely |
-| Gasto Directo / Indirecto | ⛔ | idem | idem |
-| Filtros año/nivel/depto/prov/distrito/función/categoría/fuente | 🟡 | dependen del cubo + del clasificador | cubo + temático |
-| (Hoy) proxy por función AMBIENTE + programas climáticos curados | ✅ | reemplazar por etiquetado oficial cuando llegue | lib/programas.ts |
+| Adaptación / Mitigación / Ambas | 🟡 | scraper del corte temático climático de Consulta Amigable | Consulta Amigable (MEF) |
+| Gasto Directo / Indirecto | 🟡 | idem (misma navegación) | Consulta Amigable (MEF) |
+| Filtros año/nivel/depto/prov/distrito/función/categoría/fuente | 🟡 | scrapear los cruces necesarios | Consulta Amigable |
+| (Hoy) proxy por función AMBIENTE + programas climáticos curados | ✅ | reemplazar por etiquetado oficial scrapeado | lib/programas.ts |
+| **Pendiente técnico**: verificar la ruta exacta del corte temático en el navegador del MEF | 🔴 | inspeccionar botones/postbacks de Consulta Amigable | — |
 
 ### Módulo 3 — Indicadores Territoriales (reemplazo del IPT "Prosperidad/Felicidad")
 | Sub-ítem | Estado | Qué falta | Fuente |
@@ -108,8 +114,10 @@ Leyenda: ✅ hecho · 🟢 hecho, falta exponer en UI · 🟡 parcial (falta sum
   - [ ] UI de filtros jerárquicos nacional→…→proyecto (drill encadenado).
 - **Fase 2 — Indicadores PNUD** (cierra Módulo 3)
   - [ ] Conseguir Densidad del Estado + acceso a servicios; retirar IPT; nota metodológica.
-- **Fase 3 — Clima oficial** (cierra Módulo 2) ⛔ depende del clasificador temático del MEF
-  - [ ] Cruce cubo × clasificador → adaptación/mitigación × directo/indirecto.
+- **Fase 3 — Clima oficial** (cierra Módulo 2) 🟡 factible vía scraper de Consulta Amigable
+  - [ ] Verificar la ruta del corte temático climático en Consulta Amigable.
+  - [ ] Scraper del etiquetado oficial (adaptación/mitigación × directo/indirecto) por año/función/territorio.
+  - [ ] Reemplazar el proxy AMBIENTE por el dato oficial.
 - **Fase 4 — Cubo ampliado + plataforma integrada** (cierra Módulos 4 y 5)
   - [ ] Pivote sobre resúmenes con todas las dimensiones.
 
@@ -119,7 +127,7 @@ Leyenda: ✅ hecho · 🟢 hecho, falta exponer en UI · 🟡 parcial (falta sum
 
 | Insumo | Para | Quién/origen |
 |---|---|---|
-| **Clasificador temático de cambio climático del MEF** (o el Excel de Kely) | Módulo 2 (bloqueado) | MEF / Kely |
+| **Corte temático de clima de Consulta Amigable** (lo scrapeamos; el Excel de Kely = atajo/validación) | Módulo 2 (ya NO bloqueado) | MEF Consulta Amigable |
 | **Densidad del Estado (PNUD)** distrital | Módulo 3 | PNUD Perú (informes IDH) |
 | Acceso a servicios / capacidades territoriales | Módulo 3 | INEI / PNUD |
 | Decidir el **2º año granular** (¿2024? ¿2019 pre-pandemia?) | Fase 0 | Carlos/Kely |
