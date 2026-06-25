@@ -23,6 +23,7 @@ import {
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import YearStrip from '../components/YearStrip'
+import CortesPisos from '../components/CortesPisos'
 import { soles, solesCompact, num, pct } from '../lib/format'
 import { downloadCSV } from '../lib/download'
 
@@ -476,6 +477,26 @@ export default function Pisos() {
               </span>
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* 2c. Cortes por ámbito territorial: departamento y provincia (pedido de FIEECS) */}
+      <Card>
+        <CardHeader
+          title="Cortes por ámbito: departamento y provincia"
+          subtitle="Recalcula el cruce piso × presupuesto × población solo para los distritos del ámbito elegido"
+          right={<Pill tone="brand">filtra</Pill>}
+          help={
+            <HelpTip>
+              Elige un departamento (y opcionalmente una provincia) para ver qué pisos
+              altitudinales existen en ese ámbito, su PIM, su población y el per cápita,
+              recalculados solo con sus distritos. Función y categoría presupuestal NO se
+              cortan aquí porque el gasto distrital no las trae (ver chips).
+            </HelpTip>
+          }
+        />
+        <div className="px-1 pb-2">
+          <CortesPisos />
         </div>
       </Card>
 

@@ -20,6 +20,7 @@ import YearStrip from '../components/YearStrip'
 import DondeSeGasta from '../components/DondeSeGasta'
 import DrillPresupuesto from '../components/DrillPresupuesto'
 import ProgramaPresupuestal from '../components/ProgramaPresupuestal'
+import CortesPresupuesto from '../components/CortesPresupuesto'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
 type Nivel = 'Todos' | 'GOBIERNO NACIONAL' | 'GOBIERNOS REGIONALES' | 'GOBIERNOS LOCALES'
@@ -142,6 +143,9 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
           </span>
         </div>
       </div>
+
+      {/* 0. Cortes rápidos (pedido #1 de Kely) — primero en la página */}
+      <CortesPresupuesto />
 
       {/* 1. KPIs */}
       <KpisAnio serie={oficial.data ?? serie.data ?? []} nivelYear={nivelYear} year={year} nivel={nivel} />

@@ -37,6 +37,7 @@ ATRIB = {"Directa": "Directa", "Indirecta": "Indirecta"}
 CORTES = {
     "funcion": ("ctl00$CPH1$BtnFuncion", "Función"),
     "departamento": ("ctl00$CPH1$BtnDepartamentoMeta", "Departamento"),
+    "categoria": ("ctl00$CPH1$BtnProgramaPpto", "Categoría Presupuestal"),
     "nivel": ("ctl00$CPH1$BtnTipoGobierno", "Nivel de Gobierno"),
 }
 YEARS_ALL = list(range(2026, 2015, -1))  # 2026..2016
@@ -124,7 +125,7 @@ def scrape_cut(s, year, medida_k, atrib_k, corte_k):
     return rows
 
 
-def run(years, cortes=("funcion", "departamento")):
+def run(years, cortes=("funcion", "departamento", "categoria")):
     existing = []
     if os.path.exists(OUT):
         with open(OUT, encoding="utf-8") as fh:
