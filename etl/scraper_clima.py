@@ -104,16 +104,18 @@ def parse_rows(soup, year):
 
 
 def scrape_cut(s, year, medida_k, atrib_k, corte_k):
-    s.get(f"{BASE}default.aspx?y={year}&ap=ActProy", timeout=40)
-    soup = BeautifulSoup(s.get(f"{BASE}Navegar.aspx?y={year}&ap=ActProy", timeout=40).text, "html.parser")
+    # El filtro Medida/Atribución NO va por el form: el JS Reload() del navegador lo aplica
+    # por querystring en default.aspx → &md=<medida>&att=<atribucion>. (Verificado:
+    # con estos params los totales por medida/atribución difieren; sin ellos, todos iguales.)
+    qs = f"y={year}&ap=ActProy&md={medida_k}&att={atrib_k}"
+    s.get(f"{BASE}default.aspx?{qs}", timeout=40)
+    soup = BeautifulSoup(s.get(f"{BASE}Navegar.aspx?{qs}", timeout=40).text, "html.parser")
     d = fields(soup)
-    d[FLD_MEDIDA] = medida_k
-    d[FLD_ATRIB] = atrib_k
     btn_name, btn_val = CORTES[corte_k]
     d[btn_name] = btn_val
-    action = soup.find("form").get("action") or f"Navegar_1.aspx?y={year}&ap=ActProy"
+    action = soup.find("form").get("action") or f"Navegar_1.aspx?{qs}"
     html = s.post(BASE + action, data=d,
-                  headers={"Referer": f"{BASE}Navegar.aspx?y={year}&ap=ActProy"}, timeout=50).text
+                  headers={"Referer": f"{BASE}Navegar.aspx?{qs}"}, timeout=50).text
     rows = parse_rows(BeautifulSoup(html, "html.parser"), year)
     for r in rows:
         r["medida"] = MEDIDAS[medida_k]
@@ -122,7 +124,7 @@ def scrape_cut(s, year, medida_k, atrib_k, corte_k):
     return rows
 
 
-def run(years, cortes=("funcion", "departamento", "nivel")):
+def run(years, cortes=("funcion", "departamento")):
     existing = []
     if os.path.exists(OUT):
         with open(OUT, encoding="utf-8") as fh:

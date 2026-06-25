@@ -213,7 +213,9 @@ def root():
                       "/api/por-funcion/{año}", "/api/por-sector/{año}", "/api/por-nivel/{año}",
                       "/api/flujo-fases/{año}", "/api/por-departamento-historico",
                       "/api/explorador-funcion-meta/{año}", "/api/explorador-fuente-meta/{año}",
-                      "/api/cubo?year=&dimension=&nivel=&departamento="],
+                      "/api/cubo?year=&dimension=&nivel=&departamento=",
+                      "/api/por-categoria/{año}", "/api/por-tipo-gasto/{año}", "/api/dim-values",
+                      "/api/cubo-n?year=&dim=&by=&measure="],
         "dashboard": "https://unimauro.github.io/qhaway-dashboard/",
         "fuente": "MEF — Consulta del Gasto (datos abiertos), cargado en PostgreSQL propio (FIEECS-UNI).",
         "licencia": "CC BY 4.0",
@@ -380,6 +382,151 @@ def cubo_pivot(year: int, response: Response, dim: str = "funcion",
     if dim not in _PIVOT_DIM or by not in _PIVOT_BY or measure not in _PIVOT_MEASURE:
         raise HTTPException(400, "Parámetros: dim=funcion|fuente, by=nivel|departamento, measure=pim|devengado")
     rows = _cubo_pivot(year, dim, by, measure)
+    cols: dict[str, float] = {}
+    filas: dict[str, dict] = {}
+    for r in rows:
+        fila, col, v = r["fila"] or "—", r["col"] or "—", float(r["v"] or 0)
+        cols[col] = cols.get(col, 0.0) + v
+        f = filas.setdefault(fila, {"clave": fila, "total": 0.0, "valores": {}})
+        f["total"] += v
+        f["valores"][col] = round(f["valores"].get(col, 0.0) + v, 2)
+    columnas = [c for c, _ in sorted(cols.items(), key=lambda kv: -kv[1])]
+    filas_ord = sorted(filas.values(), key=lambda f: -f["total"])
+    for f in filas_ord:
+        f["total"] = round(f["total"], 2)
+    response.headers["Cache-Control"] = CACHE_YEAR
+    return {"year": year, "dim": dim, "by": by, "measure": measure,
+            "columnas": columnas, "filas": filas_ord}
+
+
+# --- Resúmenes pre-sumarizados desde el cubo granular (categoría, tipo de gasto, cubo-N) ---
+# El portal sirve estas tablas pequeñas (construidas por etl/build_resumenes.py) sin tocar
+# el cubo granular en vivo. Solo años con cubo cargado tienen estos datos.
+@ttl_cache
+def _por_categoria(year: int):
+    return q("SELECT nivel, categoria_ppto AS categoria, SUM(pim) pim, "
+             "SUM(devengado) devengado, SUM(girado) girado "
+             "FROM res_categoria WHERE ano=%s GROUP BY nivel, categoria_ppto "
+             "ORDER BY pim DESC", (year,))
+
+
+@app.get("/api/por-categoria/{year}", tags=["Presupuesto"],
+         summary="Gasto por categoría presupuestal × nivel (PP / Acc. Centrales / APNOP)")
+def por_categoria(year: int, response: Response):
+    """Categoría presupuestal (PROGRAMAS PRESUPUESTALES | ACCIONES CENTRALES | APNOP) por
+    nivel de gobierno, desde el resumen del cubo granular. Solo años con cubo cargado."""
+    _check_year(year)
+    rows = _por_categoria(year)
+    if not rows:
+        raise HTTPException(404, f"sin resumen de categoría para {year}")
+    response.headers["Cache-Control"] = CACHE_YEAR
+    return rows
+
+
+@ttl_cache
+def _por_tipo_gasto(year: int):
+    return q("SELECT nivel, tipo_gasto AS \"tipoGasto\", SUM(pim) pim, "
+             "SUM(devengado) devengado, SUM(girado) girado "
+             "FROM res_tipo_gasto WHERE ano=%s GROUP BY nivel, tipo_gasto "
+             "ORDER BY pim DESC", (year,))
+
+
+@app.get("/api/por-tipo-gasto/{year}", tags=["Presupuesto"],
+         summary="Gasto por tipo de gasto × nivel (corriente / capital / deuda)")
+def por_tipo_gasto(year: int, response: Response):
+    """Tipo de gasto (gasto corriente, gasto de capital, servicio de la deuda) por nivel de
+    gobierno, desde el resumen del cubo granular. Solo años con cubo cargado."""
+    _check_year(year)
+    rows = _por_tipo_gasto(year)
+    if not rows:
+        raise HTTPException(404, f"sin resumen de tipo de gasto para {year}")
+    response.headers["Cache-Control"] = CACHE_YEAR
+    return rows
+
+
+@ttl_cache
+def _dim_values():
+    # Valores distintos para poblar selectores del frontend. Tomamos cada dimensión de la
+    # tabla más barata que la contiene (los agregados pequeños, no el cubo granular salvo
+    # categoría/tipo que solo viven en los resúmenes y programa).
+    funcion = [r["v"] for r in q(
+        "SELECT DISTINCT funcion AS v FROM gasto_meta_funcion WHERE funcion IS NOT NULL "
+        "AND funcion<>'' ORDER BY 1")]
+    fuente = [r["v"] for r in q(
+        "SELECT DISTINCT fuente AS v FROM gasto_meta_fuente WHERE fuente IS NOT NULL "
+        "AND fuente<>'' ORDER BY 1")]
+    nivel = [r["v"] for r in q(
+        "SELECT DISTINCT nivel AS v FROM gasto_nivel WHERE nivel IS NOT NULL "
+        "AND nivel<>'' ORDER BY 1")]
+    depto = q("SELECT DISTINCT ubigeo, departamento AS valor FROM gasto_depto_hist "
+              "WHERE departamento IS NOT NULL AND departamento<>'' ORDER BY departamento")
+    categoria = [r["v"] for r in q(
+        "SELECT DISTINCT categoria_ppto AS v FROM res_categoria WHERE categoria_ppto IS NOT NULL "
+        "AND categoria_ppto<>'' ORDER BY 1")]
+    tipo_gasto = [r["v"] for r in q(
+        "SELECT DISTINCT tipo_gasto AS v FROM res_tipo_gasto WHERE tipo_gasto IS NOT NULL "
+        "AND tipo_gasto<>'' ORDER BY 1")]
+    programa = q("SELECT DISTINCT programa AS valor FROM gasto_cubo WHERE programa IS NOT NULL "
+                 "AND programa<>'' ORDER BY programa")
+    gyears = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_cubo ORDER BY ano")]
+    return {
+        "categoria_ppto": categoria,
+        "tipo_gasto": tipo_gasto,
+        "funcion": funcion,
+        "fuente": fuente,
+        "nivel": nivel,
+        "departamento": [{"ubigeo": r["ubigeo"], "valor": r["valor"]} for r in depto],
+        "programa": [{"code": None, "valor": r["valor"]} for r in programa],
+        "granularYears": gyears,
+    }
+
+
+@app.get("/api/dim-values", tags=["OLAP"],
+         summary="Valores distintos de cada dimensión (para poblar selectores)")
+def dim_values(response: Response):
+    """Catálogo de valores por dimensión que el frontend usa para armar los selectores del
+    cubo: categoría, tipo de gasto, función, fuente, nivel, departamento, programa y los años
+    con cubo granular disponible."""
+    response.headers["Cache-Control"] = CACHE_META
+    return _dim_values()
+
+
+# Cubo-N: pivote arbitrario sobre el resumen acotado res_cubo_n. dim/by con allow-list
+# explícita (se interpolan en el SQL → NUNCA aceptar texto libre). measure idem.
+_CUBON_DIMS = {"funcion", "fuente", "nivel", "departamento", "categoria_ppto", "tipo_gasto"}
+# El resumen guarda el departamento de destino en la columna departamento_meta.
+_CUBON_COL = {"funcion": "funcion", "fuente": "fuente", "nivel": "nivel",
+              "departamento": "departamento_meta", "categoria_ppto": "categoria_ppto",
+              "tipo_gasto": "tipo_gasto"}
+_CUBON_MEASURE = {"pim", "devengado"}
+
+
+@ttl_cache
+def _cubo_n(year: int, dim: str, by: str, measure: str):
+    # Defensa en profundidad: la función que construye el SQL revalida antes de interpolar.
+    if dim not in _CUBON_DIMS or by not in _CUBON_DIMS or measure not in _CUBON_MEASURE:
+        raise HTTPException(400, "parámetros de cubo-n inválidos")
+    dcol, bcol = _CUBON_COL[dim], _CUBON_COL[by]
+    sql = (f"SELECT {dcol} AS fila, {bcol} AS col, SUM({measure}) v "
+           f"FROM res_cubo_n WHERE ano=%s GROUP BY 1,2")
+    return q(sql, (year,))
+
+
+@app.get("/api/cubo-n", tags=["OLAP"],
+         summary="Pivote OLAP sobre el cubo acotado (res_cubo_n): N dimensiones cruzadas")
+def cubo_n(year: int, response: Response, dim: str = "categoria_ppto",
+           by: str = "nivel", measure: str = "pim"):
+    """Tabla cruzada en vivo sobre el resumen del cubo granular: `dim` en filas × `by` en
+    columnas, midiendo `measure`. dim/by ∈ {funcion, fuente, nivel, departamento,
+    categoria_ppto, tipo_gasto}; measure ∈ {pim, devengado}. Devuelve {columnas,
+    filas:[{clave, total, valores:{col:val}}]} ordenadas por total desc."""
+    _check_year(year)
+    if dim not in _CUBON_DIMS or by not in _CUBON_DIMS or measure not in _CUBON_MEASURE:
+        raise HTTPException(400, "Parámetros: dim/by ∈ {funcion,fuente,nivel,departamento,"
+                                 "categoria_ppto,tipo_gasto}, measure ∈ {pim,devengado}")
+    rows = _cubo_n(year, dim, by, measure)
+    if not rows:
+        raise HTTPException(404, f"sin cubo-n para {year}")
     cols: dict[str, float] = {}
     filas: dict[str, dict] = {}
     for r in rows:

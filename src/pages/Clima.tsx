@@ -11,6 +11,7 @@ import { Chart, PALETA } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import ClimaProgramas from '../components/ClimaProgramas'
 import ClimaTerritorio from '../components/ClimaTerritorio'
+import ClimaOficial from '../components/ClimaOficial'
 
 /* ───────────────────────── Tipos de datasets ───────────────────────── */
 
@@ -400,11 +401,23 @@ export default function Clima() {
 
   return (
     <div className="space-y-6">
-      {/* 1. Intro + nota metodológica + toggle */}
+      {/* 0. Módulo principal: DATO OFICIAL del clasificador temático del MEF */}
       <SectionIntro title="Cambio Climático">
         <p>
+          ¿Cuánto y dónde invierte el Perú frente al cambio climático? Ahora contamos con el{' '}
+          <b>dato oficial</b>: el <b>clasificador temático del MEF</b> (adaptación/mitigación ×
+          directa/indirecta), que reemplaza al antiguo proxy de la «función Ambiente». Las vistas
+          complementarias por programa presupuestal y por territorio quedan debajo.
+        </p>
+      </SectionIntro>
+
+      <ClimaOficial />
+
+      {/* ─── Vistas complementarias (proxy por función / programa / territorio) ─── */}
+      <SectionIntro title="Vistas complementarias">
+        <p>
           ¿Cuánto y dónde invierte el Perú en ambiente y clima, cuál es su ejecución y cómo evoluciona?
-          Este módulo responde cuatro preguntas:
+          Estas vistas complementan al dato oficial de arriba y responden cuatro preguntas:
         </p>
         <ul className="mt-2 ml-4 list-disc space-y-1 text-sm">
           <li><b>¿Cuánto?</b> El monto asignado (PIM) y gastado (devengado) en {etiquetaAlcance}.</li>

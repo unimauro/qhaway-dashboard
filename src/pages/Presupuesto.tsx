@@ -18,6 +18,7 @@ import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
 import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
 import YearStrip from '../components/YearStrip'
 import DondeSeGasta from '../components/DondeSeGasta'
+import DrillPresupuesto from '../components/DrillPresupuesto'
 import ProgramaPresupuestal from '../components/ProgramaPresupuestal'
 
 type FaseMapa = 'pim' | 'devengado' | 'girado'
@@ -181,6 +182,9 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       {distrito.data && distrito.data.length > 0 && (
         <DondeSeGasta data={distrito.data} year={year} nivel={nivel} />
       )}
+
+      {/* 2.6 Explorador jerárquico — drill nacional→nivel→categoría→función→territorio */}
+      <DrillPresupuesto />
 
       {/* 3 y 4 en grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
