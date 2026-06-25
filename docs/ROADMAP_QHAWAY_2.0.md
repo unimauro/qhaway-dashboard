@@ -135,8 +135,35 @@ Leyenda: ✅ hecho · 🟢 hecho, falta exponer en UI · 🟡 parcial (falta sum
 
 ---
 
-## 5. Estado actual (25-jun-2026)
-- Cubo granular **2025** descargándose en el VPS (detached, ~80 min). Validará el esquema y el
-  tamaño real para dimensionar el resto.
-- Todo lo demás del dashboard (11 módulos, buzón, API, export, seguridad) está **live en qhaway.org**.
-- **Bloqueo principal**: el etiquetado oficial de clima (Módulo 2) espera el clasificador temático.
+## 5. Avances 25-jun-2026 (investigación con 3 agentes)
+
+### 🎉 Clima (Módulo 2) — DESBLOQUEADO y scraper YA CONSTRUIDO Y VALIDADO
+- El clasificador temático oficial vive en un **navegador propio del MEF**:
+  `https://apps5.mineco.gob.pe/cambioclimatico2023/Navegador/` (mismo motor ASP.NET).
+- Controles confirmados: `DrpMedida` (`Mitigacion`/`Adaptacion`/`MitigacionAdaptacion`),
+  `DrpAtribucion` (`Directa`/`Indirecta`), años **2016-2026**; cortes `BtnFuncion`,
+  `BtnDepartamentoMeta`, `BtnTipoGobierno`, `BtnProgramaPpto` (categoría).
+- `etl/scraper_clima_discovery.py` (descubrimiento) y `etl/scraper_clima.py` (scraper real) listos.
+  **Probado:** 2024 Adaptación/Directa/función → 12 funciones (Agropecuaria, Pesca, Energía,
+  Transporte, Ambiente…), PIM≥Devengado, datos correctos. Confirma que el gasto climático
+  abarca muchas funciones, NO solo AMBIENTE (el bug que señaló Kely).
+- **Pendiente:** correr la matriz histórica completa (años×medida×atribución×corte, ~local, lento,
+  reanudable) → `public/data/clima-tematico.json`, e integrarlo al módulo Clima reemplazando el proxy.
+
+### Indicadores PNUD (Módulo 3) — plan claro
+- IDH distrital PNUD ya descargable (reusar; mirror estable IPE). **Densidad del Estado** NO tiene
+  dataset abierto → se reconstruye con 4 dimensiones (salud, educación, agua+saneamiento, luz) desde
+  **Censo 2017 (INEI)**; servicios (agua/luz/internet) también del Censo. Reemplazar IPT por un
+  **tablero de indicadores citables** (no otro índice opaco). Renombrar página a "Desarrollo Humano y
+  Densidad del Estado". Caveat: IDE oficial es provincial (2009); distrital solo en informe PNUD 2025 (PDF).
+
+### Esquema de resúmenes (F0) — diseñado
+- Catálogo R1-R11 (tablas/JSON < 100 MB total), drill nacional→proyecto en 7 niveles, endpoints nuevos
+  (`/api/dim-values`, `/api/por-categoria`, `/api/por-tipo-gasto`, `/api/drill`, `/api/cubo-n`). El portal
+  sirve resúmenes; el granular se toca solo en el nivel "proyecto" por índice `(ano, ubigeo)`.
+- **Fase A** (R4-R7, R10, drill niveles 0-4) sale de los agregados existentes → desplegable YA.
+  **Fase B** (R1-R3, R8, R9, R11) requiere el cubo granular.
+
+### Estado del cubo piloto
+- Descarga 2025 (~10.5 GB) casi completa; procesará solo (reduce→COPY→GROUP BY→archiva .gz).
+- Todo lo demás del dashboard (11 módulos, buzón, API, export, seguridad) sigue **live en qhaway.org**.
