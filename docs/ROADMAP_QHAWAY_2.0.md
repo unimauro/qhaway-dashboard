@@ -1,5 +1,17 @@
 # QHAWAY 2.0 — Roadmap para cerrar los requisitos de FIEECS (Kely)
 
+## ⭐ ESTADO AL 01-JUL-2026 (casi todo cerrado)
+- **Módulo 1 Presupuesto** ✅ cortes Territorial (depto/prov/distrito) + Económico (función/categoría) + drill jerárquico hasta proyecto/actividad (2025).
+- **Módulo 2 Clima** ✅ COMPLETO — clasificador temático OFICIAL del MEF scrapeado (adaptación/mitigación × directa/indirecta), 3 cortes (función/departamento/categoría), 11 años; proxy "Solo Ambiente" retirado.
+- **Módulo 3 Indicadores** 🟢 Prosperidad→"Desarrollo Humano y Densidad del Estado": IDH+pobreza citados; **IDE reconstruido 3/4 dimensiones** (agua+saneamiento, electricidad del Censo 2017 INEI vía REDATAM validado; **salud** de MINSA INFORHUS-DIGEP). Falta **educación** (asistencia secundaria) — BLOQUEADO por REDATAM INEI caído (HTTP 500); re-correr `etl/build_ide.py --refresh` al restablecerse → 4/4.
+- **Módulo 4 Cubo** ✅ potenciado a 6 dimensiones (`/api/cubo-n`: función/fuente/nivel/departamento/categoría/tipo-gasto), heatmap+tabla+CSV.
+- **Cubo granular**: 2025 cargado (275k filas). **2024 descargando** (background VPS); al terminar → `build_resumenes.py 2024` para que categoría/tipo-gasto/drill/cubo-n cubran 2024+2025.
+- Buzón de contacto, API pública, export CSV/PNG, seguridad endurecida: todo live.
+- **Pendiente puntual**: (1) educación IDE (espera REDATAM), (2) procesar cubo 2024 (espera descarga), (3) crédito explícito a Kely/FIEECS si se pide.
+
+---
+
+
 > Documento de planificación. Recoge los requisitos funcionales enviados por Kely Alfaro
 > (FIEECS-UNI) y lo conversado en la llamada (jun-2026), y mapea **qué está hecho, qué falta y
 > con qué datos se cierra cada punto**. Última actualización: 25-jun-2026.
