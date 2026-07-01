@@ -1,5 +1,8 @@
-import { useMemo, useState } from 'react'
-import { getMeta, getPorDistrito, getGeoJSON, loadJSON } from '../lib/data'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  getMeta, getPorDistrito, getGeoJSON, loadJSON,
+  getCuboN, getDimValues, type CuboPivot, type CuboDim, type CuboMeasure, type DimValues,
+} from '../lib/data'
 import type { Meta, PorDistrito, IndicadorDistrito, RiesgosData } from '../lib/types'
 import { useAsync } from '../lib/useAsync'
 import { clasificarPiso, TODOS_PISOS } from '../lib/pisos'
@@ -7,7 +10,7 @@ import { soles, solesCompact, num, pct } from '../lib/format'
 import { Card, CardHeader, HelpTip, KPI, Pill, Select, Loading, ErrorBox, SectionIntro } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
-import CuboPivotView from '../components/CuboPivot'
+import { downloadCSV } from '../lib/download'
 
 // ───────────────────────── Cubo Presupuestal ─────────────────────────
 // Cruza, por distrito (ubigeo 6 díg), cuatro dimensiones que el MEF NO integra:
@@ -410,8 +413,8 @@ export default function Cubo() {
         </span>
       </div>
 
-      {/* ── 0. Pivote OLAP en vivo (cruce arbitrario contra la API) ── */}
-      <CuboPivotView years={distYears} />
+      {/* ── 0. Cubo n-dimensional OLAP en vivo (cruce arbitrario de 6 dimensiones) ── */}
+      <CuboNView />
 
       {/* ── 1. Presets ── */}
       <Card>
@@ -777,6 +780,298 @@ function Dato({ label, valor }: { label: string; valor: string }) {
     <div>
       <dt className="text-xs text-slate-500 dark:text-slate-400">{label}</dt>
       <dd className="font-medium text-slate-800 dark:text-slate-100">{valor}</dd>
+    </div>
+  )
+}
+
+// ───────────────────────── Cubo n-dimensional (OLAP en vivo) ─────────────────────────
+// Cruza DOS de las 6 dimensiones del backend (/api/cubo-n) a la vez: filas = dimensión,
+// columnas = eje, celda = medida (PIM/Devengado). Solo años con detalle granular
+// (los expone /api/dim-values → granularYears). Reemplaza al pivote viejo de 2 dimensiones.
+
+const DIM_OPTS: { value: CuboDim; label: string }[] = [
+  { value: 'funcion', label: 'Función' },
+  { value: 'fuente', label: 'Fuente de financiamiento' },
+  { value: 'nivel', label: 'Nivel de gobierno' },
+  { value: 'departamento', label: 'Departamento' },
+  { value: 'categoria_ppto', label: 'Categoría presupuestal' },
+  { value: 'tipo_gasto', label: 'Tipo de gasto' },
+]
+const dimLabel = (d: CuboDim) => DIM_OPTS.find((o) => o.value === d)?.label ?? d
+const otraDim = (evitar: CuboDim) => (DIM_OPTS.find((o) => o.value !== evitar) as { value: CuboDim }).value
+
+function CuboNView() {
+  const dimQ = useAsync<DimValues>(getDimValues, [])
+  const granularYears = useMemo(() => {
+    const gy = dimQ.data?.granularYears
+    return gy && gy.length ? [...gy].sort((a, b) => b - a) : []
+  }, [dimQ.data])
+
+  const [year, setYear] = useState<number | null>(null)
+  const [dim, setDim] = useState<CuboDim>('funcion')
+  const [by, setBy] = useState<CuboDim>('nivel')
+  const [measure, setMeasure] = useState<CuboMeasure>('pim')
+
+  // El año por defecto sale de granularYears (el más reciente) cuando llega la lista.
+  useEffect(() => {
+    if (year == null && granularYears.length) setYear(granularYears[0])
+  }, [granularYears, year])
+
+  // Impedir dim == by: al elegir la misma dimensión en un eje, se autoajusta el otro.
+  function changeDim(v: CuboDim) {
+    setDim(v)
+    if (v === by) setBy(otraDim(v))
+  }
+  function changeBy(v: CuboDim) {
+    setBy(v)
+    if (v === dim) setDim(otraDim(v))
+  }
+
+  const yearOk = year != null && granularYears.includes(year)
+  const pivot = useAsync<CuboPivot | null>(
+    () => (yearOk ? getCuboN(year!, dim, by, measure) : Promise.resolve(null)),
+    [year, dim, by, measure, yearOk],
+  )
+
+  // Heatmap: filas (top 28 por total) × columnas, color = medida.
+  const { option, nFilas } = useMemo(() => {
+    const d = pivot.data
+    if (!d || !d.filas.length) return { option: null, nFilas: 0 }
+    const filas = d.filas.slice(0, 28)
+    const yCats = filas.map((f) => f.clave).reverse()
+    const xCats = d.columnas
+    const data: [number, number, number][] = []
+    for (const f of filas) {
+      const yi = yCats.indexOf(f.clave)
+      xCats.forEach((c, xi) => data.push([xi, yi, Math.round(f.valores[c] || 0)]))
+    }
+    const maxV = Math.max(1, ...data.map((p) => p[2]))
+    const opt = {
+      tooltip: {
+        position: 'top',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        formatter: (p: any) => `${yCats[p.value[1]]} · ${xCats[p.value[0]]}<br/><b>${soles(p.value[2])}</b>`,
+      },
+      grid: { left: 4, right: 14, top: 8, bottom: 56, containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: xCats,
+        axisLabel: { fontSize: 10, rotate: xCats.length > 5 ? 40 : 0, width: 90, overflow: 'truncate' },
+        splitArea: { show: true },
+      },
+      yAxis: {
+        type: 'category',
+        data: yCats,
+        axisLabel: { fontSize: 10, width: 140, overflow: 'truncate' },
+        splitArea: { show: true },
+      },
+      visualMap: {
+        min: 0,
+        max: maxV,
+        calculable: true,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 6,
+        itemWidth: 12,
+        itemHeight: 120,
+        inRange: { color: ['#ccfbf1', '#2dd4bf', '#0f766e'] },
+        formatter: (v: number) => solesCompact(v),
+        textStyle: { fontSize: 9 },
+      },
+      series: [
+        {
+          type: 'heatmap',
+          data,
+          label: { show: false },
+          emphasis: { itemStyle: { borderColor: '#0f172a', borderWidth: 1 } },
+        },
+      ],
+    }
+    return { option: opt, nFilas: yCats.length }
+  }, [pivot.data])
+
+  function exportarCSV() {
+    const d = pivot.data
+    if (!d || !d.filas.length) return
+    const cols = [
+      { key: 'clave', label: dimLabel(dim) },
+      ...d.columnas.map((c) => ({ key: c, label: c })),
+      { key: 'total', label: 'Total' },
+    ]
+    const rows = d.filas.map((f) => ({ clave: f.clave, total: Math.round(f.total), ...f.valores }))
+    downloadCSV(`qhaway-cubo-n-${dim}-x-${by}-${measure}-${year}`, cols, rows as Record<string, unknown>[])
+  }
+
+  const yearOpts = granularYears.map((y) => ({ value: String(y), label: String(y) }))
+  const dimOptsFor = (excluir: CuboDim) => DIM_OPTS.filter((o) => o.value !== excluir)
+  const filasTabla = pivot.data?.filas.slice(0, 40) ?? []
+
+  return (
+    <Card>
+      <CardHeader
+        title="Cubo n-dimensional (OLAP en vivo)"
+        subtitle="Cruza dos de las seis dimensiones a la vez · servido por la API en tiempo real"
+        help={
+          <HelpTip>
+            Una <strong>tabla cruzada</strong> de verdad sobre el detalle granular del presupuesto: elige qué
+            dimensión va en las <strong>filas</strong> y cuál en las <strong>columnas</strong> (función, fuente,
+            nivel de gobierno, departamento, categoría presupuestal o tipo de gasto) y la celda muestra el monto.
+            El color es más intenso donde hay más gasto. Se calcula <strong>en vivo</strong> en el servidor
+            (no es un archivo precomputado). Atribución por destino territorial (META).
+          </HelpTip>
+        }
+        right={
+          <div className="flex items-center gap-2">
+            {pivot.data && pivot.data.filas.length > 0 && (
+              <button
+                onClick={exportarCSV}
+                className="rounded-lg bg-brand-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-700"
+              >
+                ⬇ CSV
+              </button>
+            )}
+            <Pill tone="brand">en vivo</Pill>
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 px-4 pb-1">
+        <Select
+          label="Año"
+          value={year != null ? String(year) : ''}
+          onChange={(v) => setYear(Number(v))}
+          options={yearOpts.length ? yearOpts : [{ value: '', label: '—' }]}
+        />
+        <Select<CuboDim>
+          label="Dimensión (filas)"
+          value={dim}
+          onChange={changeDim}
+          options={dimOptsFor(by)}
+        />
+        <Select<CuboDim>
+          label="Eje (columnas)"
+          value={by}
+          onChange={changeBy}
+          options={dimOptsFor(dim)}
+        />
+        <Select<CuboMeasure>
+          label="Medida"
+          value={measure}
+          onChange={setMeasure}
+          options={[
+            { value: 'pim', label: 'PIM' },
+            { value: 'devengado', label: 'Devengado' },
+          ]}
+        />
+      </div>
+
+      <p className="px-4 pt-2 text-xs text-amber-600 dark:text-amber-400">
+        El cubo n-dimensional usa el detalle granular, disponible por ahora para el/los año(s):{' '}
+        <strong>{granularYears.length ? granularYears.join(', ') : '—'}</strong>. Para series largas usa los
+        módulos por dimensión.
+      </p>
+
+      <div className="px-4 pb-4">
+        {dimQ.loading || pivot.loading ? (
+          <Loading label="Calculando el cubo…" />
+        ) : dimQ.error ? (
+          <ErrorBox error={String(dimQ.error)} />
+        ) : pivot.error ? (
+          <ErrorBox error={String(pivot.error)} />
+        ) : !yearOk ? (
+          <p className="py-8 text-center text-sm text-ink-400">
+            El año seleccionado no tiene detalle granular. Elige uno de:{' '}
+            {granularYears.length ? granularYears.join(', ') : '(aún ninguno)'}.
+          </p>
+        ) : !option ? (
+          <p className="py-8 text-center text-sm text-ink-400">
+            Sin datos para este cruce todavía (el detalle por destino llega con la migración).
+          </p>
+        ) : (
+          <div className="space-y-5">
+            <Chart option={option} height={Math.max(340, nFilas * 22 + 120)} exportName={`cubo-n-${dim}-x-${by}`} />
+            <TablaCuboN
+              dimName={dimLabel(dim)}
+              columnas={pivot.data!.columnas}
+              filas={filasTabla}
+            />
+            {(pivot.data?.filas.length ?? 0) > filasTabla.length && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Mostrando {filasTabla.length} de {num(pivot.data!.filas.length)} filas en la tabla. Descarga el CSV
+                para el detalle completo.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function TablaCuboN({
+  dimName,
+  columnas,
+  filas,
+}: {
+  dimName: string
+  columnas: string[]
+  filas: CuboPivot['filas']
+}) {
+  const totalesCol = useMemo(() => {
+    const t: Record<string, number> = {}
+    let gran = 0
+    for (const f of filas) {
+      for (const c of columnas) t[c] = (t[c] ?? 0) + (f.valores[c] || 0)
+      gran += f.total
+    }
+    return { t, gran }
+  }, [filas, columnas])
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+            <th className="py-2 pr-3 text-left whitespace-nowrap sticky left-0 bg-white dark:bg-ink-900/60">{dimName}</th>
+            {columnas.map((c) => (
+              <th key={c} className="py-2 px-2 text-right whitespace-nowrap">{c}</th>
+            ))}
+            <th className="py-2 pl-2 text-right whitespace-nowrap font-semibold">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.clave} className="border-b border-slate-100 dark:border-slate-800">
+              <td className="py-1.5 pr-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap sticky left-0 bg-white dark:bg-ink-900/60">
+                {f.clave}
+              </td>
+              {columnas.map((c) => (
+                <td key={c} className="py-1.5 px-2 text-right tabular-nums text-slate-600 dark:text-slate-300">
+                  {f.valores[c] ? solesCompact(f.valores[c]) : '—'}
+                </td>
+              ))}
+              <td className="py-1.5 pl-2 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-100">
+                {solesCompact(f.total)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-slate-300 dark:border-slate-600 text-xs">
+            <td className="py-2 pr-3 font-semibold text-slate-700 dark:text-slate-200 sticky left-0 bg-white dark:bg-ink-900/60">
+              Total
+            </td>
+            {columnas.map((c) => (
+              <td key={c} className="py-2 px-2 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">
+                {totalesCol.t[c] ? solesCompact(totalesCol.t[c]) : '—'}
+              </td>
+            ))}
+            <td className="py-2 pl-2 text-right tabular-nums font-bold text-slate-800 dark:text-slate-100">
+              {solesCompact(totalesCol.gran)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   )
 }

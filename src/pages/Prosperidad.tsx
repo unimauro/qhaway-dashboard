@@ -21,11 +21,13 @@ import IndicadorPendiente from '../components/IndicadorPendiente'
 //   - Pobreza monetaria (INEI, mapa de pobreza)
 //   - Pobreza extrema (INEI)
 //   - Vulnerabilidad alimentaria (INEI/MIDIS)
+//   - Acceso a servicios: agua, desagüe, electricidad, internet (INEI, Censo 2017,
+//     vía REDATAM CPV2017DI; ver etl/build_ide.py). 1 874 distritos.
+//   - Densidad del Estado (IDE) — reconstrucción desde Censo 2017, 2 de 4 dimensiones
+//     (agua+saneamiento y electrificación). Salud y educación pendientes.
 //
-//  Indicadores reconocidos pero AÚN SIN dato distrital cargado (se declaran "en
-//  preparación" con metodología, sin inventar cifras):
-//   - Densidad del Estado (IDE-4D) — reconstrucción desde Censo 2017
-//   - Acceso a servicios (agua, desagüe, electricidad, internet) — Censo 2017 INEI
+//  Dimensiones IDE reconocidas pero AÚN SIN dato distrital limpio (null, pendientes):
+//   - salud (médicos por 10 000 hab.) y educación (asistencia neta a secundaria).
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface GeoNombre {
@@ -191,8 +193,8 @@ export default function Prosperidad() {
         Un <strong>tablero de indicadores reconocidos y citables</strong> por distrito. A diferencia de un
         índice compuesto con pesos arbitrarios, aquí cada indicador se muestra <strong>por separado</strong>,
         con su fuente, su año y su nota metodológica. Así puedes leer el desarrollo humano, la pobreza, la
-        vulnerabilidad y —en preparación— la densidad del Estado y el acceso a servicios, sin esconderlos
-        detrás de un solo número.
+        vulnerabilidad, el acceso a servicios básicos (Censo 2017) y —como reconstrucción— la densidad del
+        Estado, sin esconderlos detrás de un solo número.
       </SectionIntro>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -261,8 +263,11 @@ export default function Prosperidad() {
             <Dato label="Vuln. alimentaria (INEI)" valor={ficha.ind.vulnAlim != null ? pct(ficha.ind.vulnAlim / 100) : '—'} />
             <Dato label="Población" valor={Number.isFinite(ficha.ind.pob) ? num(ficha.ind.pob) : '—'} />
             <Dato label="Altitud" valor={ficha.ind.altitud != null ? `${num(ficha.ind.altitud)} msnm` : '—'} />
-            <Dato label="Agua (Censo 2017)" valor={ficha.ind.agua != null ? pct(ficha.ind.agua / 100) : 'en prep.'} />
+            <Dato label="Agua red púb. (Censo 2017)" valor={ficha.ind.agua != null ? pct(ficha.ind.agua / 100) : 'en prep.'} />
+            <Dato label="Desagüe red púb. (Censo 2017)" valor={ficha.ind.desague != null ? pct(ficha.ind.desague / 100) : 'en prep.'} />
             <Dato label="Electricidad (Censo 2017)" valor={ficha.ind.electricidad != null ? pct(ficha.ind.electricidad / 100) : 'en prep.'} />
+            <Dato label="Internet hogar (Censo 2017)" valor={ficha.ind.internet != null ? pct(ficha.ind.internet / 100) : 'en prep.'} />
+            <Dato label="IDE (2 de 4 dim.)" valor={calcularIDE(ficha.ind) != null ? calcularIDE(ficha.ind)!.toFixed(2) : 'en prep.'} />
           </dl>
         </Card>
       )}
@@ -292,15 +297,18 @@ export default function Prosperidad() {
       {/* ── 2. Densidad del Estado (IDE-4D) ── */}
       {hayIde ? (
         <IndicadorPanel
-          titulo="Densidad del Estado (IDE-4D)"
+          titulo="Densidad del Estado (IDE)"
           subtitulo="Reconstrucción · 0–1, mayor es mejor"
           help={
             <>
               Reconstrucción del Índice de Densidad del Estado (PNUD) como <strong>promedio simple</strong> de
-              4 dimensiones (salud, educación, agua+saneamiento, electricidad), cada una 0–1. La dimensión
-              salud es <strong>referencial</strong> (médicos/10k, sensible a la movilidad poblacional). El IDE
-              oficial es provincial (2009); el distrital solo aparece en el informe PNUD 2025 (PDF). Esto es
-              una <strong>reconstrucción propia</strong>, no la cifra oficial.
+              las dimensiones <strong>disponibles</strong> (0–1). Hoy están cargadas <strong>2 de las 4</strong>{' '}
+              dimensiones, ambas del Censo 2017 (INEI): <em>agua + saneamiento</em> (promedio de % de viviendas
+              con agua y con desagüe por red pública) y <em>electrificación</em> (% de viviendas con alumbrado
+              eléctrico por red). Las dimensiones <em>salud</em> (médicos por 10 000 hab.) y <em>educación</em>{' '}
+              (asistencia neta a secundaria) aún no se cargan y se promedian solo las presentes. El IDE oficial
+              del PNUD es provincial (2009); el distrital solo aparece en su informe 2025 (PDF). Esto es una{' '}
+              <strong>reconstrucción propia</strong>, no la cifra oficial.
             </>
           }
           filas={filasIde}
@@ -308,10 +316,10 @@ export default function Prosperidad() {
           formatValor={(v) => v.toFixed(2)}
           mayorEsMejor
           unidad="IDE"
-          fuente="Reconstrucción QHAWAY a partir del Censo 2017 (INEI), metodología IDE-4D (PNUD 2025)"
-          nota="IDE = promedio simple de 4 dimensiones (0–1). Salud referencial. No es la cifra oficial del PNUD."
-          caveat="reconstrucción"
-          exportName="ide-4d-distrital"
+          fuente="Reconstrucción QHAWAY a partir del Censo 2017 (INEI), metodología IDE (PNUD)"
+          nota="Promedio simple (0–1) de 2 de las 4 dimensiones PNUD: agua+saneamiento y electrificación (Censo 2017). Salud y educación pendientes. No es la cifra oficial del PNUD."
+          caveat="reconstrucción · 2 de 4 dim."
+          exportName="ide-distrital"
           seleccionado={seleccionado}
           onSelect={setSeleccionado}
         />
@@ -347,6 +355,7 @@ export default function Prosperidad() {
             mayorEsMejor
             unidad="% agua"
             fuente="INEI, Censos Nacionales 2017 (XII de Población, VII de Vivienda)"
+            nota="% de viviendas particulares con agua por red pública (dentro o fuera de la vivienda, dentro de la edificación). No incluye pilón de uso público. Nacional 78.3%."
             exportName="agua-distrital"
             seleccionado={seleccionado}
             onSelect={setSeleccionado}
@@ -365,6 +374,7 @@ export default function Prosperidad() {
             mayorEsMejor
             unidad="% desagüe"
             fuente="INEI, Censos Nacionales 2017"
+            nota="% de viviendas particulares con desagüe conectado a red pública (dentro o fuera de la vivienda). Nacional 66.6%."
             exportName="desague-distrital"
             seleccionado={seleccionado}
             onSelect={setSeleccionado}
@@ -383,6 +393,7 @@ export default function Prosperidad() {
             mayorEsMejor
             unidad="% luz"
             fuente="INEI, Censos Nacionales 2017"
+            nota="% de viviendas particulares con alumbrado eléctrico por red pública. Nacional 87.7%."
             exportName="electricidad-distrital"
             seleccionado={seleccionado}
             onSelect={setSeleccionado}
@@ -401,6 +412,7 @@ export default function Prosperidad() {
             mayorEsMejor
             unidad="% internet"
             fuente="INEI, Censos Nacionales 2017"
+            nota="% de hogares con conexión a internet en la vivienda. Nacional 28.0%."
             exportName="internet-distrital"
             seleccionado={seleccionado}
             onSelect={setSeleccionado}
@@ -503,15 +515,20 @@ export default function Prosperidad() {
               monetaria distrital; vulnerabilidad a la inseguridad alimentaria INEI/MIDIS).
             </li>
             <li>
-              <strong>Densidad del Estado (IDE-4D):</strong> reconstrucción a partir del Censo 2017 (INEI) según
-              la metodología IDE del PNUD (promedio simple de 4 dimensiones, 0–1; salud referencial). El IDE
-              oficial es provincial (2009); el distrital solo está en el informe PNUD 2025 (PDF). Cualquier IDE
-              distrital aquí es una <strong>reconstrucción</strong>, no la cifra oficial.
+              <strong>Densidad del Estado (IDE):</strong> reconstrucción a partir del Censo 2017 (INEI) según la
+              metodología IDE del PNUD (promedio simple de las dimensiones disponibles, 0–1). Hoy carga{' '}
+              <strong>2 de las 4</strong> dimensiones: agua+saneamiento (promedio de agua y desagüe por red
+              pública) y electrificación. Salud (médicos/10k) y educación (asistencia neta a secundaria) quedan
+              pendientes. El IDE oficial del PNUD es provincial (2009); el distrital solo está en su informe 2025
+              (PDF). Es una <strong>reconstrucción</strong>, no la cifra oficial.
             </li>
             <li>
               <strong>Acceso a servicios (agua, desagüe, electricidad, internet):</strong> INEI, Censos
-              Nacionales 2017 (% de viviendas). En preparación: REDATAM no ofrece descarga directa; se cargará
-              cuando consolidemos el dato distrital.
+              Nacionales 2017 (% de viviendas particulares; internet a nivel de hogar). Extraídos de{' '}
+              <strong>REDATAM en línea, base CPV2017DI</strong> (frecuencia de cada variable con corte por
+              distrito). Cobertura: 1 874 distritos con dato censal. Los agregados nacionales reconstruidos
+              coinciden con las cifras publicadas por el INEI (agua 78.3 %, desagüe 66.6 %, electricidad 87.7 %,
+              internet 28.0 %).
             </li>
           </ul>
           <p className="text-xs">

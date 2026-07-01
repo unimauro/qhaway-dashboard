@@ -151,3 +151,36 @@ export async function getCuboPivot(
   if (!res.ok) throw new Error(`El pivote en vivo no está disponible (HTTP ${res.status}).`)
   return (await res.json()) as CuboPivot
 }
+
+// ── Cubo n-dimensional en vivo (/api/cubo-n) ──
+// Mismo shape que CuboPivot, pero dim y by aceptan las 6 dimensiones del allow-list del
+// backend (no solo función/fuente × nivel/departamento). Solo años granulares.
+export type CuboDim = 'funcion' | 'fuente' | 'nivel' | 'departamento' | 'categoria_ppto' | 'tipo_gasto'
+export type CuboMeasure = 'pim' | 'devengado'
+
+export async function getCuboN(
+  year: number,
+  dim: CuboDim,
+  by: CuboDim,
+  measure: CuboMeasure,
+): Promise<CuboPivot> {
+  const url = `${API_BASE}/api/cubo-n?year=${year}&dim=${dim}&by=${by}&measure=${measure}`
+  const res = await fetchWithTimeout(url, API_TIMEOUT_MS)
+  if (!res.ok) throw new Error(`El cubo n-dimensional no está disponible (HTTP ${res.status}).`)
+  return (await res.json()) as CuboPivot
+}
+
+// Valores de dimensiones + años con detalle granular, para poblar selectores del cubo-n.
+// El backend expone al menos `granularYears`; el resto de campos es opcional/flexible.
+export interface DimValues {
+  granularYears: number[]
+  values?: Partial<Record<CuboDim, string[]>>
+}
+export async function getDimValues(): Promise<DimValues> {
+  if (cache.has('__dim_values')) return cache.get('__dim_values') as DimValues
+  const res = await fetchWithTimeout(`${API_BASE}/api/dim-values`, API_TIMEOUT_MS)
+  if (!res.ok) throw new Error(`No se pudieron obtener los años granulares (HTTP ${res.status}).`)
+  const json = (await res.json()) as DimValues
+  cache.set('__dim_values', json)
+  return json
+}
