@@ -1,5 +1,13 @@
 # QHAWAY 2.0 — Roadmap para cerrar los requisitos de FIEECS (Kely)
 
+## 🔄 ACTUALIZACIÓN 01-SET-2026 (revisión de estado)
+> Informe completo: [`docs/ESTADO_2026-09.md`](ESTADO_2026-09.md) · Word/PDF en `public/docs/` (→ `https://qhaway.org/docs/`).
+- **Dependencias npm** ✅ actualizadas a últimas versiones seguras (semver), 0 vulnerabilidades, `build` OK. *Majors* (Tailwind 4, Vite 8, TS 7) pospuestos.
+- **IDE servicios** 🟢 re-descargados en vivo del Censo 2017 (agua/desagüe/luz/internet: 1874 distritos). Salud 1891. **IDE 3/4**.
+- **Educación IDE** 🔴 sigue bloqueada: la **entidad *Persona* de REDATAM CPV2017DI devuelve HTTP 500 en TODAS sus variables** (10 candidatas probadas), mientras *Vivienda*/*Hogar* funcionan. Caída server-side de INEI, no código nuestro. Reintentar `build_ide.py` al restablecerse.
+- **Presupuesto MEF** 🔴 refresco bloqueado: el endpoint `datastore_search_sql` de Datos Abiertos MEF devuelve **HTTP 404 «Recurso no encontrado» para toda consulta** (la ruta/API SQL cambió o fue retirada). Datos publicados (`lastUpdate 2026-06-11`) siguen válidos; falta el nuevo contrato de la API para regenerar.
+- **Cubo 2024** ⏳ en el VPS (fuera del entorno local).
+
 ## ⭐ ESTADO AL 01-JUL-2026 (casi todo cerrado)
 - **Módulo 1 Presupuesto** ✅ cortes Territorial (depto/prov/distrito) + Económico (función/categoría) + drill jerárquico hasta proyecto/actividad (2025).
 - **Módulo 2 Clima** ✅ COMPLETO — clasificador temático OFICIAL del MEF scrapeado (adaptación/mitigación × directa/indirecta), 3 cortes (función/departamento/categoría), 11 años; proxy "Solo Ambiente" retirado.

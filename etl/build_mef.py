@@ -8,7 +8,7 @@ Usa etl/resource_map.json (generado por discover.py) = {year:{id,rows,devcol}}.
   cuya tabla sea liviana (rows < 1.5M), para evitar timeouts en GROUP BY.
 Resiliente: cada consulta aislada; escribe lo que completa.
 """
-import json, os, urllib.parse, urllib.request, time
+import json, os, urllib.parse, urllib.request, time, datetime
 
 API = "https://api.datosabiertos.mef.gob.pe/DatosAbiertos/v1/datastore_search_sql"
 HERE = os.path.dirname(__file__)
@@ -142,7 +142,8 @@ except Exception as e:
 # --- meta.json ---
 years = sorted(s["year"] for s in serie) or [PY]
 meta = {
-    "years": years, "latestYear": max(years), "distritoYear": PY, "lastUpdate": "2026-06-11",
+    "years": years, "latestYear": max(years), "distritoYear": PY,
+    "lastUpdate": datetime.date.today().isoformat(),
     "fases": ["pia", "pim", "certificado", "devengado", "girado"],
     "sources": [
         {"name": "MEF — Datos Abiertos (Consulta del Gasto Público, SIAF)",
