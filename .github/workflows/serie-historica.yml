@@ -1,28 +1,42 @@
-name: Backfill serie histórica (MEF, batch largo)
+name: '[OBSOLETO] Backfill serie histórica (API SQL del MEF)'
 
-# Construye la serie nacional multi-año desde las tablas mensuales completas del MEF.
-# La API del MEF es MUY lenta (60-120s/consulta sobre tablas de ~11M filas), así que
-# este job corre largo y es RESUMIBLE: cachea el avance (etl/year_tabs.json y
-# serie-nacional.json) y se commitea lo acumulado. Ejecútalo a mano varias veces hasta
-# completar todos los años (cada corrida avanza desde donde quedó).
-# NOTA: la API de datos abiertos del MEF hace timeout (>210s) al agregar las
-# tablas mensuales completas (~11M filas/año), por lo que este backfill NO es
-# confiable. Se deja solo como disparo manual (workflow_dispatch) para futuros
-# intentos; la vía recomendada para la serie histórica es un scraper dedicado de
-# la Consulta Amigable (ver roadmap), no esta API.
+# ⚠ OBSOLETO — no usar salvo para pruebas puntuales.
+#
+# Construía la serie nacional multi-año consultando `datastore_search_sql` de la API
+# de datos abiertos del MEF. Ese endpoint SQL fue retirado / hace timeout (>210 s al
+# agregar tablas mensuales de ~11M filas), así que este backfill no es confiable.
+# La serie histórica oficial se construye hoy fuera de esta API: etl/serie_oficial.py
+# (Informes Globales de la Gestión Presupuestaria del MEF) y
+# etl/scraper_consulta_amigable.py, publicada en public/data/serie-historica-oficial.json.
+#
+# Antes el paso de backfill terminaba en `|| true`, de modo que un fallo de la API se
+# reportaba como éxito y se commiteaba un avance parcial sin aviso. Ahora un fallo
+# hace fallar el job (rojo en Actions) y no se commitea nada.
+# Solo se puede lanzar a mano y exige confirmar explícitamente.
 on:
   workflow_dispatch:
+    inputs:
+      confirmar:
+        description: 'Escribe OBSOLETO para confirmar que quieres correr este backfill retirado'
+        required: true
+        default: ''
 
 permissions:
   contents: write
 
+concurrency:
+  group: serie-historica
+  cancel-in-progress: false
+
 jobs:
   backfill:
+    if: inputs.confirmar == 'OBSOLETO'
     runs-on: ubuntu-latest
     timeout-minutes: 330   # ~5.5 h (tope del runner es 6 h)
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - run: echo "::warning::Workflow obsoleto (API SQL del MEF retirada). Ver comentario en serie-historica.yml."
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Descubrir tablas mensuales completas (MONTO_GIRADO)
@@ -37,12 +51,12 @@ jobs:
           print("tablas:", len(rows))
           PY
       - name: Backfill (resumible)
-        run: python etl/serie_historica.py || true
+        run: python etl/serie_historica.py
       - name: Commit avance
         run: |
           git config user.name "qhaway-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add public/data/serie-nacional.json etl/year_tabs.json || true
+          git add public/data/serie-nacional.json etl/year_tabs.json
           if git diff --staged --quiet; then
             echo "Sin cambios."
           else

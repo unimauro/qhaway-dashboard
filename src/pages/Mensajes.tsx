@@ -29,6 +29,15 @@ function descargarCSV(rows: Mensaje[]) {
   URL.revokeObjectURL(url)
 }
 
+async function fetchMensajes(t: string): Promise<Mensaje[]> {
+  const res = await fetch(`${API_BASE}/api/contactos?limit=500`, {
+    headers: { 'X-Contactos-Token': t },
+  })
+  if (res.status === 404) throw new Error('Token inválido o sin permiso.')
+  if (!res.ok) throw new Error(`No se pudo cargar (HTTP ${res.status}).`)
+  return (await res.json()) as Mensaje[]
+}
+
 // Pantalla PRIVADA: el "lugar" donde ver todos los mensajes recibidos por el buzón.
 // Gateada por el mismo token de /api/contactos (se guarda en este navegador).
 export default function Mensajes() {
@@ -36,33 +45,45 @@ export default function Mensajes() {
   const [input, setInput] = useState('')
   const [msgs, setMsgs] = useState<Mensaje[] | null>(null)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  // Si ya hay token guardado, la carga inicial arranca en el montaje (estado inicial
+  // "cargando" en vez de setLoading síncrono dentro del efecto).
+  const [loading, setLoading] = useState(() => Boolean(token))
 
-  const cargar = useCallback(async (t: string) => {
+  const aplicar = useCallback((t: string, p: Promise<Mensaje[]>, isAlive: () => boolean = () => true) => {
+    p.then(
+      (data) => {
+        if (!isAlive()) return
+        setMsgs(data)
+        setError('')
+        localStorage.setItem(LS, t)
+        setToken(t)
+      },
+      (e: unknown) => {
+        if (!isAlive()) return
+        setError(e instanceof Error ? e.message : 'Error al cargar')
+        setMsgs(null)
+      },
+    ).finally(() => {
+      if (isAlive()) setLoading(false)
+    })
+  }, [])
+
+  // Acción del usuario (botón / Enter / Actualizar).
+  const cargar = useCallback((t: string) => {
     if (!t) return
     setLoading(true)
     setError('')
-    try {
-      const res = await fetch(`${API_BASE}/api/contactos?limit=500`, {
-        headers: { 'X-Contactos-Token': t },
-      })
-      if (res.status === 404) throw new Error('Token inválido o sin permiso.')
-      if (!res.ok) throw new Error(`No se pudo cargar (HTTP ${res.status}).`)
-      const data = (await res.json()) as Mensaje[]
-      setMsgs(data)
-      localStorage.setItem(LS, t)
-      setToken(t)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al cargar')
-      setMsgs(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    aplicar(t, fetchMensajes(t))
+  }, [aplicar])
 
+  // Carga inicial con el token guardado (solo al montar).
   useEffect(() => {
-    if (token) cargar(token)
-  }, [token, cargar])
+    const t = localStorage.getItem(LS) || ''
+    if (!t) return
+    let alive = true
+    aplicar(t, fetchMensajes(t), () => alive)
+    return () => { alive = false }
+  }, [aplicar])
 
   const salir = () => {
     localStorage.removeItem(LS)

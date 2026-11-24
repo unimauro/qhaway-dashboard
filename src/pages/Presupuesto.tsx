@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
 import {
-  getMeta, getSerieNacional, getPorNivelYear,
-  getPorDistrito, getPorFuncion, getPorSector, getFlujoFases, getGeoJSON, loadJSON,
+  getMeta, getSerieNacionalConCorte, getPorNivelYear, aniosDistritales, rangoAnios, anioEnCurso,
+  getPorDistrito, getPorFuncion, getPorSector, getGeoJSON, loadJSON, type SerieConCorte,
 } from '../lib/data'
 import type {
   Meta, SerieNacional, PorNivel, PorDepartamento, PorDistrito,
   PorFuncion, PorSector, FlujoFases,
 } from '../lib/types'
 import { useAsync } from '../lib/useAsync'
-import { solesCompact, soles, pct, ejecucion } from '../lib/format'
+import { solesCompact, soles, pct, ejecucion, fecha } from '../lib/format'
+import { DEVENGADO_DESDE, devengadoONull, ejecucionValida } from '../lib/reglas'
 import {
   Card, CardHeader, HelpTip, KPI, Pill, Select, Loading, ErrorBox, SectionIntro,
 } from '../components/ui'
 import { Chart } from '../components/Chart'
 import MapaDistrital, { type MapValue } from '../components/MapaDistrital'
-import SerieChartShared, { type PuntoMensual } from '../components/SerieChart'
+import SerieChartShared from '../components/SerieChart'
 import YearStrip from '../components/YearStrip'
 import DondeSeGasta from '../components/DondeSeGasta'
 import DrillPresupuesto from '../components/DrillPresupuesto'
@@ -80,6 +81,11 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   const [faseMapa, setFaseMapa] = useState<FaseMapa>('pim')
   const [nivel, setNivel] = useState<Nivel>('Todos')
   const [selDist, setSelDist] = useState<string | undefined>(undefined)
+  // Cambiar de año limpia la selección del mapa (en el handler, no en un efecto).
+  const cambiarAnio = (y: number) => { setYear(y); setSelDist(undefined) }
+  const distYears = useMemo(() => aniosDistritales(meta), [meta])
+  const rangoDetalle = rangoAnios(distYears)
+  const enCurso = anioEnCurso(meta)
 
   // Refleja el año en el hash (opcional, no rompe el HashRouter)
   useEffect(() => {
@@ -91,10 +97,10 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
     }
   }, [year])
 
-  // Fuentes que NO dependen del año
-  const serie = useAsync<SerieNacional[]>(getSerieNacional, [])
-  const oficial = useAsync<SerieNacional[]>(() => loadJSON<SerieNacional[]>('serie-historica-oficial.json'), [])
-  const mensual = useAsync<PuntoMensual[]>(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
+  // Fuentes que NO dependen del año.
+  // UNA sola fuente para todos los totales nacionales de la vista (KPIs, serie y flujo de
+  // fases): /api/serie-nacional (respaldo estático: serie-historica-oficial.json).
+  const serie = useAsync<SerieConCorte>(getSerieNacionalConCorte, [])
   const geo = useAsync<unknown>(getGeoJSON, [])
 
   // Departamento histórico (todos los años 2004-2026, por destino territorial).
@@ -104,24 +110,24 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
   const distrito = useAsync<PorDistrito[]>(() => getPorDistrito(year), [year])
   const funcion = useAsync<PorFuncion[]>(() => getPorFuncion(year), [year])
   const sector = useAsync<PorSector[]>(() => getPorSector(year), [year])
-  const flujo = useAsync<FlujoFases>(() => getFlujoFases(year), [year])
-  // Desglose por nivel para el año (API, 2024-2025). Para el total "Todos" usamos la serie.
+  // Desglose por nivel para el año (API por-nivel/{año}). Para "Todos" se usa la serie.
   const nivelYear = useAsync<PorNivel[]>(() => getPorNivelYear(year), [year])
 
-  // Años disponibles: une los del histórico departamental (2004-2026) con los de meta.
+  // Años del selector: los de la serie nacional (la fuente de los KPIs). Así no aparecen
+  // años sin total nacional (p. ej. 2005, que solo existe en el histórico departamental).
   const yearOpts = useMemo(() => {
-    const ys = new Set<number>(years)
-    for (const r of deptoHist.data ?? []) ys.add(r.year)
-    return [...ys].sort((a, b) => b - a).map((y) => ({ value: y, label: String(y) }))
-  }, [years, deptoHist.data])
+    const ys = serie.data ? serie.data.serie.map((r) => r.year) : years
+    return [...new Set(ys)].sort((a, b) => b - a).map((y) => ({ value: y, label: String(y) }))
+  }, [years, serie.data])
+
+  // Fila nacional del año elegido (KPIs + Sankey salen de aquí → mismas cifras).
+  const filaAnio = serie.data?.serie.find((r) => r.year === year)
+  const corteAnio = serie.data?.corte(year)
   const faseOpts: { value: FaseMapa; label: string }[] = [
     { value: 'pim', label: 'PIM (asignado vigente)' },
     { value: 'devengado', label: 'Devengado (gastado)' },
     { value: 'girado', label: 'Girado (pagado)' },
   ]
-
-  // Reset de la selección del mapa al cambiar de año
-  useEffect(() => { setSelDist(undefined) }, [year])
 
   return (
     <div className="space-y-5">
@@ -133,13 +139,18 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       {/* Controles sticky */}
       <div className="sticky top-0 z-30 -mx-2 px-2 py-2 backdrop-blur bg-white/80 dark:bg-ink-950/80 border-b border-ink-200 dark:border-ink-800 rounded-b-xl">
         <div className="flex flex-wrap items-center gap-3">
-          <YearStrip years={yearOpts.map((o) => o.value)} value={year} onChange={setYear} />
+          <YearStrip years={yearOpts.map((o) => o.value)} value={year} onChange={cambiarAnio} />
         </div>
         <div className="flex flex-wrap items-center gap-3 mt-2">
           <Select<FaseMapa> value={faseMapa} onChange={setFaseMapa} options={faseOpts} label="Fase a mapear" />
           <Select<Nivel> value={nivel} onChange={setNivel} options={NIVEL_OPTS} label="Nivel de gobierno" />
           <span className="ml-auto text-[11px] text-ink-400">
-            Actualizado: {meta.lastUpdate}
+            {serie.data
+              ? corteAnio
+                ? <>Corte {year}: {fecha(corteAnio)}{year === enCurso ? ' (ejercicio en curso)' : ''}</>
+                : <>{year}: cierre anual</>
+              : <>Actualizado: {fecha(meta.lastUpdate)}</>}
+            {serie.data?.origen === 'estatico' && ' · respaldo estático (API no disponible)'}
           </span>
         </div>
       </div>
@@ -148,7 +159,9 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       <CortesPresupuesto />
 
       {/* 1. KPIs */}
-      <KpisAnio serie={oficial.data ?? serie.data ?? []} nivelYear={nivelYear} year={year} nivel={nivel} />
+      {serie.loading && !serie.data ? <Loading label="Cargando serie nacional…" />
+        : serie.error ? <ErrorBox error={serie.error} />
+        : <KpisAnio fila={filaAnio} nivelYear={nivelYear} year={year} nivel={nivel} rangoDetalle={rangoDetalle} />}
 
       {/* 2. Mapa + panel de detalle */}
       <Card>
@@ -178,6 +191,7 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
             nivel={nivel}
             selDist={selDist}
             onSelect={setSelDist}
+            rangoDetalle={rangoDetalle}
           />
         </div>
       </Card>
@@ -188,18 +202,18 @@ function PresupuestoBody({ meta }: { meta: Meta }) {
       )}
 
       {/* 2.6 Explorador jerárquico — drill nacional→nivel→categoría→función→territorio */}
-      <DrillPresupuesto />
+      <DrillPresupuesto fallbackYear={meta.latestYear} />
 
       {/* 3 y 4 en grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <SerieTemporal serie={serie} oficial={oficial} mensual={mensual} />
-        <SankeyFases flujo={flujo} year={year} />
+        <SerieTemporal serie={serie} />
+        <SankeyFases fila={filaAnio} cargando={serie.loading && !serie.data} year={year} rangoDetalle={rangoDetalle} />
       </div>
 
       {/* 5 y 6 */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <TreemapFuncion funcion={funcion} year={year} />
-        <RankingSector sector={sector} year={year} />
+        <TreemapFuncion funcion={funcion} year={year} rangoDetalle={rangoDetalle} />
+        <RankingSector sector={sector} year={year} rangoDetalle={rangoDetalle} />
       </div>
 
       {/* 7. Categoría / Programa Presupuestal (con resaltado climático) */}
@@ -238,40 +252,43 @@ function sumarNivel(rows: PorNivel[], nivel: Nivel): Totales {
 }
 
 function KpisAnio({
-  serie, nivelYear, year, nivel,
+  fila, nivelYear, year, nivel, rangoDetalle,
 }: {
-  serie: SerieNacional[]
+  fila: SerieNacional | undefined
   nivelYear: ReturnType<typeof useAsync<PorNivel[]>>
   year: number
   nivel: Nivel
+  rangoDetalle: string
 }) {
-  // "Todos los niveles" → total nacional de la serie (cubre los 22 años).
-  // Un nivel específico → desglose de la API por año (2024-2025).
-  let t: Totales = ZERO
-  let disponible = false
+  // "Todos los niveles" → fila de la serie nacional (misma fuente que el Sankey).
+  // Un nivel específico → desglose de la API por año (por-nivel/{año}).
+  let t: Totales | null = null
   let aviso: string | null = null
 
   if (nivel === 'Todos') {
-    const row = serie.find((r) => r.year === year)
-    if (row) {
-      t = { pia: row.pia || 0, pim: row.pim || 0, devengado: row.devengado || 0, girado: row.girado || 0 }
-      disponible = true
+    if (fila) {
+      t = { pia: fila.pia || 0, pim: fila.pim || 0, devengado: fila.devengado || 0, girado: fila.girado || 0 }
     } else {
       aviso = `No hay serie nacional para ${year}.`
     }
   } else {
-    if (nivelYear.loading) return <Loading label="Cargando desglose por nivel…" />
+    if (nivelYear.loading && !nivelYear.data) return <Loading label="Cargando desglose por nivel…" />
     const rows = (nivelYear.data ?? []).filter((r) => r.year === year || r.year === undefined)
-    if (rows.length > 0 && !nivelYear.error) {
-      t = sumarNivel(rows, nivel)
-      disponible = t.pim > 0
-    }
-    if (!disponible) {
-      aviso = `El desglose por nivel de gobierno está disponible para los años con detalle distrital (2024–2025). Para ${year}, usa “Todos los niveles”.`
+    const suma = rows.length > 0 && !nivelYear.error ? sumarNivel(rows, nivel) : null
+    if (suma && suma.pim > 0) {
+      t = suma
+    } else {
+      aviso = `El desglose por nivel de gobierno está disponible para los años con detalle${rangoDetalle ? ` (${rangoDetalle})` : ''}. Para ${year}, usa “Todos los niveles”.`
     }
   }
 
-  const frac = ejecucion(t.devengado, t.pim)
+  // Devengado/girado antes de DEVENGADO_DESDE (o ≤0) = sin dato, nunca "0.0%".
+  const dev = t ? devengadoONull(year, t.devengado) : null
+  const gir = t ? devengadoONull(year, t.girado) : null
+  const frac = t ? ejecucionValida(year, t.devengado, t.pim) : null
+  if (t && dev == null && !aviso && year < DEVENGADO_DESDE) {
+    aviso = `El devengado y el girado de ${year} no son confiables en la fuente (solo desde ${DEVENGADO_DESDE}); se muestran como sin dato.`
+  }
 
   return (
     <div>
@@ -283,23 +300,33 @@ function KpisAnio({
           <strong>PIA</strong>: presupuesto inicial de apertura. <strong>PIM</strong>: presupuesto
           modificado (vigente). <strong>Devengado</strong>: obligación de pago reconocida (gasto real).
           <strong> Girado</strong>: orden de pago emitida. <strong>% ejecución</strong> = devengado / PIM
-          (rojo &lt;50%, ámbar 50–80%, verde &gt;80%).
+          (rojo &lt;50%, ámbar 50–80%, verde &gt;80%). Devengado y girado solo son confiables
+          desde {DEVENGADO_DESDE}.
         </HelpTip>
       </div>
       {aviso && (
-        <p className="mb-2 text-xs"><Pill tone="warn">sin desglose</Pill> <span className="text-ink-400">{aviso}</span></p>
+        <p className="mb-2 text-xs"><Pill tone="warn">{t ? 'sin dato' : 'sin desglose'}</Pill> <span className="text-ink-400">{aviso}</span></p>
       )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-        <KPI label="PIA" value={solesCompact(t.pia)} sub="Inicial de apertura" />
-        <KPI label="PIM" value={solesCompact(t.pim)} sub="Modificado / vigente" accent />
-        <KPI label="Devengado" value={solesCompact(t.devengado)} sub="Gasto reconocido" />
-        <KPI label="Girado" value={solesCompact(t.girado)} sub="Orden de pago" />
+        <KPI label="PIA" value={solesCompact(t?.pia)} sub="Inicial de apertura" />
+        <KPI label="PIM" value={solesCompact(t?.pim)} sub="Modificado / vigente" accent />
+        <KPI label="Devengado" value={solesCompact(dev)} sub={dev == null && t ? 's/d' : 'Gasto reconocido'} />
+        <KPI label="Girado" value={solesCompact(gir)} sub={gir == null && t ? 's/d' : 'Orden de pago'} />
         <Card className="px-4 py-3">
           <p className="text-xs text-ink-400">% Ejecución</p>
-          <p className="text-2xl font-bold tracking-tight" style={{ color: colorEjec(frac) }}>{pct(frac)}</p>
-          <p className="text-xs mt-0.5">
-            <Pill tone={toneEjec(frac)}>{frac >= 0.8 ? 'alta' : frac >= 0.5 ? 'media' : 'baja'}</Pill>
-          </p>
+          {frac != null ? (
+            <>
+              <p className="text-2xl font-bold tracking-tight" style={{ color: colorEjec(frac) }}>{pct(frac)}</p>
+              <p className="text-xs mt-0.5">
+                <Pill tone={toneEjec(frac)}>{frac >= 0.8 ? 'alta' : frac >= 0.5 ? 'media' : 'baja'}</Pill>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold tracking-tight text-ink-400">—</p>
+              <p className="text-xs mt-0.5"><Pill tone="neutral">sin dato</Pill></p>
+            </>
+          )}
         </Card>
       </div>
     </div>
@@ -319,8 +346,10 @@ function HelpTipMapa() {
   )
 }
 
+type FilaDetalle = { ubigeo: string; titulo: string; sub?: string; pim: number; devengado: number; valor: number }
+
 function MapaPanel({
-  geo, distrito, depto, year, faseMapa, nivel, selDist, onSelect,
+  geo, distrito, depto, year, faseMapa, nivel, selDist, onSelect, rangoDetalle,
 }: {
   geo: ReturnType<typeof useAsync<unknown>>
   distrito: ReturnType<typeof useAsync<PorDistrito[]>>
@@ -330,71 +359,81 @@ function MapaPanel({
   nivel: Nivel
   selDist?: string
   onSelect: (u: string | undefined) => void
+  rangoDetalle: string
 }) {
-  if (geo.loading) return <Loading label="Cargando geografía…" />
+  // ¿Hay datos por distrito para este año? Si no, fallback a departamento. Mientras se
+  // recarga un año nuevo, useAsync conserva el dato previo → no parpadea el fallback.
+  const usaDistrito = !distrito.error && !!distrito.data
+  const usaDepto = !usaDistrito && !distrito.loading && !depto.error && !!depto.data
+
+  // Map de valores + listado del panel: memoizado para que MapaDistrital no reconstruya
+  // la capa en cada render (p. ej. al seleccionar un distrito).
+  const construido = useMemo(() => {
+    const values = new Map<string, MapValue>()
+    const detalle: FilaDetalle[] = []
+    // Girado/devengado < DEVENGADO_DESDE = sin dato (no se colorea como 0).
+    const valorFase = (a: { pim: number; devengado: number; girado: number }) =>
+      faseMapa === 'pim' ? a.pim : devengadoONull(year, a[faseMapa])
+    const etiquetaEjec = (dev: number, pim: number) => {
+      const f = ejecucionValida(year, dev, pim)
+      return f == null ? 's/d' : pct(f)
+    }
+
+    if (usaDistrito && distrito.data) {
+      const rows = distrito.data.filter((r) => nivel === 'Todos' || r.nivel === nivel)
+      // agrupa por ubigeo (puede haber varias filas por nivel)
+      const agg = new Map<string, { pim: number; devengado: number; girado: number; distrito: string; departamento: string; provincia: string }>()
+      for (const r of rows) {
+        const cur = agg.get(r.ubigeo) ?? { pim: 0, devengado: 0, girado: 0, distrito: r.distrito, departamento: r.departamento, provincia: r.provincia }
+        cur.pim += r.pim || 0
+        cur.devengado += r.devengado || 0
+        cur.girado += r.girado || 0
+        agg.set(r.ubigeo, cur)
+      }
+      for (const [ub, a] of agg) {
+        const valor = valorFase(a)
+        if (valor != null) values.set(ub, { value: valor, label: `Ejec: ${etiquetaEjec(a.devengado, a.pim)}` })
+        detalle.push({ ubigeo: ub, titulo: a.distrito, sub: `${a.provincia}, ${a.departamento}`, pim: a.pim, devengado: a.devengado, valor: valor ?? 0 })
+      }
+      return { modo: 'distrito' as const, values, detalle: detalle.sort((x, y) => y.valor - x.valor) }
+    }
+    if (usaDepto && depto.data && geo.data) {
+      // Histórico departamental por destino (META): filtra solo por año (no tiene desglose por nivel).
+      const rows = depto.data.filter((r) => r.year === year)
+      const agg = new Map<string, { pim: number; devengado: number; girado: number; departamento: string }>()
+      for (const r of rows) {
+        const cur = agg.get(r.ubigeo) ?? { pim: 0, devengado: 0, girado: 0, departamento: r.departamento }
+        cur.pim += r.pim || 0
+        cur.devengado += r.devengado || 0
+        cur.girado += r.girado || 0
+        agg.set(r.ubigeo, cur)
+      }
+      // Asigna a TODOS los distritos de cada depto el mismo valor (color por departamento)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const feats: any[] = (geo.data as any).features ?? []
+      for (const f of feats) {
+        const dpto2 = String(f.properties?.IDDPTO ?? f.properties?.IDDIST?.slice(0, 2) ?? '')
+        const a = agg.get(dpto2)
+        const valor = a ? valorFase(a) : null
+        if (a && valor != null) values.set(String(f.properties?.IDDIST), { value: valor, label: `Depto · Ejec: ${etiquetaEjec(a.devengado, a.pim)}` })
+      }
+      for (const [, a] of agg) {
+        detalle.push({ ubigeo: a.departamento, titulo: a.departamento, sub: 'Departamento', pim: a.pim, devengado: a.devengado, valor: valorFase(a) ?? 0 })
+      }
+      return { modo: 'departamento' as const, values, detalle: detalle.sort((x, y) => y.valor - x.valor) }
+    }
+    return null
+  }, [usaDistrito, usaDepto, distrito.data, depto.data, geo.data, nivel, faseMapa, year])
+
+  if (geo.loading && !geo.data) return <Loading label="Cargando geografía…" />
   if (geo.error) return <ErrorBox error={geo.error} />
   if (!geo.data) return <Loading />
-
-  // ¿Hay datos por distrito para este año? (solo 2024-2026). Si no, fallback a departamento.
-  const usaDistrito = !distrito.error && !!distrito.data
-  const usaDepto = !usaDistrito && !depto.error && !!depto.data
-
-  if (distrito.loading && depto.loading) return <Loading label={`Cargando ejecución ${year}…`} />
-
-  // Construye el Map de valores y el listado para el panel lateral.
-  const values = new Map<string, MapValue>()
-  let detalle: { ubigeo: string; titulo: string; sub?: string; pim: number; devengado: number; valor: number }[] = []
-  let modo: 'distrito' | 'departamento' = 'distrito'
-
-  if (usaDistrito && distrito.data) {
-    modo = 'distrito'
-    const rows = distrito.data.filter((r) => nivel === 'Todos' || r.nivel === nivel)
-    // agrupa por ubigeo (puede haber varias filas por nivel)
-    const agg = new Map<string, { pim: number; devengado: number; girado: number; distrito: string; departamento: string; provincia: string }>()
-    for (const r of rows) {
-      const cur = agg.get(r.ubigeo) ?? { pim: 0, devengado: 0, girado: 0, distrito: r.distrito, departamento: r.departamento, provincia: r.provincia }
-      cur.pim += r.pim || 0
-      cur.devengado += r.devengado || 0
-      cur.girado += r.girado || 0
-      agg.set(r.ubigeo, cur)
-    }
-    for (const [ub, a] of agg) {
-      const valor = a[faseMapa]
-      const frac = ejecucion(a.devengado, a.pim)
-      values.set(ub, { value: valor, label: `Ejec: ${pct(frac)}` })
-      detalle.push({ ubigeo: ub, titulo: a.distrito, sub: `${a.provincia}, ${a.departamento}`, pim: a.pim, devengado: a.devengado, valor })
-    }
-  } else if (usaDepto && depto.data) {
-    modo = 'departamento'
-    // Histórico departamental por destino (META): filtra solo por año (no tiene desglose por nivel).
-    const rows = depto.data.filter((r) => r.year === year)
-    const agg = new Map<string, { pim: number; devengado: number; girado: number; departamento: string }>()
-    for (const r of rows) {
-      const cur = agg.get(r.ubigeo) ?? { pim: 0, devengado: 0, girado: 0, departamento: r.departamento }
-      cur.pim += r.pim || 0
-      cur.devengado += r.devengado || 0
-      cur.girado += r.girado || 0
-      agg.set(r.ubigeo, cur)
-    }
-    // Asigna a TODOS los distritos de cada depto el mismo valor (color por departamento)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const feats: any[] = (geo.data as any).features ?? []
-    for (const f of feats) {
-      const dpto2 = String(f.properties?.IDDPTO ?? f.properties?.IDDIST?.slice(0, 2) ?? '')
-      const a = agg.get(dpto2)
-      if (a) values.set(String(f.properties?.IDDIST), { value: a[faseMapa], label: `Depto · Ejec: ${pct(ejecucion(a.devengado, a.pim))}` })
-    }
-    for (const [, a] of agg) {
-      const valor = a[faseMapa]
-      detalle.push({ ubigeo: a.departamento, titulo: a.departamento, sub: 'Departamento', pim: a.pim, devengado: a.devengado, valor })
-    }
-  } else {
+  if (!construido) {
+    if (distrito.loading || depto.loading) return <Loading label={`Cargando ejecución ${year}…`} />
     // Sin distrito ni departamento utilizable
-    const e = distrito.error || depto.error || 'No hay datos territoriales para este año.'
-    return <ErrorBox error={e} />
+    return <ErrorBox error={distrito.error || depto.error || 'No hay datos territoriales para este año.'} />
   }
-
-  detalle = detalle.sort((a, b) => b.valor - a.valor)
+  const { modo, values, detalle } = construido
 
   // Panel de detalle del distrito seleccionado
   const sel = selDist ? detalle.find((d) => d.ubigeo === selDist) : undefined
@@ -425,7 +464,7 @@ function MapaPanel({
           ) : modo === 'distrito' ? (
             <p className="text-xs text-ink-400">Haz clic en un distrito del mapa para ver su PIM, devengado y % de ejecución.</p>
           ) : (
-            <p className="text-xs text-ink-400">Vista por departamento (fallback). El detalle por distrito está disponible solo para años con archivo por-distrito (2024–2026).</p>
+            <p className="text-xs text-ink-400">Vista por departamento (fallback). El detalle por distrito está disponible solo para años con detalle distrital{rangoDetalle ? ` (${rangoDetalle})` : ''}.</p>
           )}
 
           <div className="mt-4 pt-3 border-t border-ink-200 dark:border-ink-800">
@@ -478,30 +517,29 @@ function DetalleBox({ d, fase }: { d: { titulo: string; sub?: string; pim: numbe
 
 /* ───────────────────────── 3. Serie temporal ───────────────────────── */
 
-function SerieTemporal({ serie, oficial, mensual }: {
-  serie: ReturnType<typeof useAsync<SerieNacional[]>>
-  oficial: ReturnType<typeof useAsync<SerieNacional[]>>
-  mensual: ReturnType<typeof useAsync<PuntoMensual[]>>
-}) {
-  const usarOficial = oficial.data && oficial.data.length >= 2
-  const datos = usarOficial ? oficial.data! : serie.data
+function SerieTemporal({ serie }: { serie: ReturnType<typeof useAsync<SerieConCorte>> }) {
+  const datos = serie.data?.serie
+  const anios = datos?.map((r) => r.year) ?? []
+  const rango = rangoAnios(anios)
+  const ultimo = anios.length ? Math.max(...anios) : undefined
+  const corteUlt = ultimo != null ? serie.data?.corte(ultimo) : undefined
   return (
     <Card>
       <CardHeader
-        title="Presupuesto público — tendencia anual 2004-2026"
-        subtitle="PIM y devengado por año · MEF Consulta Amigable (por destino territorial)"
+        title={`Presupuesto público — tendencia anual${rango ? ` ${rango}` : ''}`}
+        subtitle={`PIM y devengado por año · ${serie.data?.origen === 'estatico' ? 'respaldo estático (MEF)' : 'API QHAWAY (MEF, datos abiertos)'}${corteUlt && ultimo ? ` · ${ultimo} al ${fecha(corteUlt)}` : ''}`}
         help={
           <span>
-            Serie histórica del gasto público (22 años), extraída de la Consulta
-            Amigable del MEF por destino territorial. Las barras son el <strong>PIM</strong>
-            y la línea el <strong>devengado</strong>. Consistente con el detalle distrital
-            2025. Cifras en <strong>soles corrientes</strong> (no ajustadas por inflación).
+            Serie nacional del gasto público ({anios.length} años): las barras son el{' '}
+            <strong>PIM</strong> y el <strong>devengado</strong>. Son las mismas cifras de los KPIs
+            y del flujo de fases. El devengado solo es confiable desde {DEVENGADO_DESDE}; antes
+            se muestra sin dato. Cifras en <strong>soles corrientes</strong> (no ajustadas por inflación).
           </span>
         }
       />
       <div className="px-4 pb-4">
-        {serie.loading ? <Loading /> : serie.error ? <ErrorBox error={serie.error} /> : !datos ? <Loading /> : (
-          <SerieChartShared serie={datos} mensual={mensual.data ?? undefined} height={320} />
+        {serie.loading && !datos ? <Loading /> : serie.error ? <ErrorBox error={serie.error} /> : !datos ? <Loading /> : (
+          <SerieChartShared serie={datos} height={320} />
         )}
       </div>
     </Card>
@@ -510,16 +548,34 @@ function SerieTemporal({ serie, oficial, mensual }: {
 
 /* ───────────────────────── 4. Sankey de fases ───────────────────────── */
 
-function DetalleNoDisponible({ year }: { year: number }) {
+function DetalleNoDisponible({ year, rangoDetalle }: { year: number; rangoDetalle: string }) {
   return (
     <div className="px-4 py-8 text-center text-sm text-ink-400">
-      <Pill tone="neutral">solo años con descarga distrital</Pill>
-      <p className="mt-2">Este desglose está disponible para 2025 (y los años cuyo detalle distrital ya se incorporó). Para {year} aún no — el mapa de arriba sí muestra {year} a nivel territorial.</p>
+      <Pill tone="neutral">solo años con detalle</Pill>
+      <p className="mt-2">
+        Este desglose está disponible para los años con detalle cargado{rangoDetalle ? ` (${rangoDetalle})` : ''}.
+        Para {year} aún no — el mapa de arriba sí muestra {year} a nivel territorial.
+      </p>
     </div>
   )
 }
 
-function SankeyFases({ flujo, year }: { flujo: ReturnType<typeof useAsync<FlujoFases>>; year: number }) {
+function SankeyFases({ fila, cargando, year, rangoDetalle }: {
+  fila: SerieNacional | undefined
+  cargando: boolean
+  year: number
+  rangoDetalle: string
+}) {
+  // Mismo registro que los KPIs (serie nacional). Devengado/girado inválidos se omiten.
+  const flujo: FlujoFases | null = useMemo(() => {
+    if (!fila) return null
+    const dev = devengadoONull(year, fila.devengado)
+    const gir = devengadoONull(year, fila.girado)
+    return {
+      pia: fila.pia, pim: fila.pim, certificado: fila.certificado,
+      devengado: dev ?? NaN, girado: gir ?? NaN,
+    }
+  }, [fila, year])
   return (
     <Card>
       <CardHeader
@@ -530,13 +586,13 @@ function SankeyFases({ flujo, year }: { flujo: ReturnType<typeof useAsync<FlujoF
             Diagrama de flujo: el <strong>ancho de cada banda = monto en soles</strong>. Se lee de
             izquierda a derecha cómo el presupuesto avanza por las fases. El estrechamiento entre
             etapas muestra cuánto <strong>no</strong> llegó a la siguiente fase (lo no
-            comprometido / no ejecutado).
+            comprometido / no ejecutado). Mismas cifras que los KPIs de arriba.
           </span>
         }
       />
       <div className="px-4 pb-4">
-        {flujo.loading ? <Loading /> : flujo.error ? <DetalleNoDisponible year={year} /> : !flujo.data ? <Loading /> : (
-          <SankeyChart f={flujo.data} />
+        {cargando ? <Loading /> : !flujo ? <DetalleNoDisponible year={year} rangoDetalle={rangoDetalle} /> : (
+          <SankeyChart f={flujo} />
         )}
       </div>
     </Card>
@@ -549,8 +605,9 @@ function SankeyChart({ f }: { f: FlujoFases }) {
     { key: 'pia', name: 'PIA' },
     { key: 'pim', name: 'PIM' },
     ...(f.certificado != null ? [{ key: 'certificado' as const, name: 'Certificado' }] : []),
-    { key: 'devengado', name: 'Devengado' },
-    { key: 'girado', name: 'Girado' },
+    // Devengado/girado sin dato (NaN: año < DEVENGADO_DESDE) no entran al flujo.
+    ...(Number.isFinite(f.devengado) ? [{ key: 'devengado' as const, name: 'Devengado' }] : []),
+    ...(Number.isFinite(f.girado) && Number.isFinite(f.devengado) ? [{ key: 'girado' as const, name: 'Girado' }] : []),
   ]
   const nodes = chain.map((c) => ({ name: c.name }))
   const links = chain.slice(0, -1).map((c, i) => ({
@@ -596,7 +653,7 @@ function SankeyChart({ f }: { f: FlujoFases }) {
 
 /* ───────────────────────── 5. Treemap por función ───────────────────────── */
 
-function TreemapFuncion({ funcion, year }: { funcion: ReturnType<typeof useAsync<PorFuncion[]>>; year: number }) {
+function TreemapFuncion({ funcion, year, rangoDetalle }: { funcion: ReturnType<typeof useAsync<PorFuncion[]>>; year: number; rangoDetalle: string }) {
   return (
     <Card>
       <CardHeader
@@ -611,7 +668,7 @@ function TreemapFuncion({ funcion, year }: { funcion: ReturnType<typeof useAsync
         }
       />
       <div className="px-4 pb-4">
-        {funcion.loading ? <Loading /> : funcion.error ? <DetalleNoDisponible year={year} /> : !funcion.data ? <Loading /> : (
+        {funcion.loading && !funcion.data ? <Loading /> : funcion.error ? <DetalleNoDisponible year={year} rangoDetalle={rangoDetalle} /> : !funcion.data ? <Loading /> : (
           <TreemapChart data={funcion.data} />
         )}
       </div>
@@ -659,7 +716,7 @@ function TreemapChart({ data }: { data: PorFuncion[] }) {
 
 /* ───────────────────────── 6. Ranking por sector ───────────────────────── */
 
-function RankingSector({ sector, year }: { sector: ReturnType<typeof useAsync<PorSector[]>>; year: number }) {
+function RankingSector({ sector, year, rangoDetalle }: { sector: ReturnType<typeof useAsync<PorSector[]>>; year: number; rangoDetalle: string }) {
   return (
     <Card>
       <CardHeader
@@ -674,7 +731,7 @@ function RankingSector({ sector, year }: { sector: ReturnType<typeof useAsync<Po
         }
       />
       <div className="px-4 pb-4">
-        {sector.loading ? <Loading /> : sector.error ? <DetalleNoDisponible year={year} /> : !sector.data ? <Loading /> : (
+        {sector.loading && !sector.data ? <Loading /> : sector.error ? <DetalleNoDisponible year={year} rangoDetalle={rangoDetalle} /> : !sector.data ? <Loading /> : (
           <SectorChart data={sector.data} />
         )}
       </div>

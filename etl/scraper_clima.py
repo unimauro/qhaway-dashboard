@@ -13,6 +13,7 @@ Uso:
   python3 etl/scraper_clima.py test            # 1 corte de validación
   python3 etl/scraper_clima.py 2024            # un año (todas las medidas×atrib×cortes)
   python3 etl/scraper_clima.py all             # 2016..2026
+  python3 etl/scraper_clima.py --force 2026     # re-scrapea años ya hechos
 """
 import requests
 import re
@@ -21,6 +22,7 @@ import os
 import sys
 import time
 from bs4 import BeautifulSoup
+import corte
 
 BASE = "https://apps5.mineco.gob.pe/cambioclimatico2023/Navegador/"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -110,7 +112,10 @@ def scrape_cut(s, year, medida_k, atrib_k, corte_k):
     # con estos params los totales por medida/atribución difieren; sin ellos, todos iguales.)
     qs = f"y={year}&ap=ActProy&md={medida_k}&att={atrib_k}"
     s.get(f"{BASE}default.aspx?{qs}", timeout=40)
-    soup = BeautifulSoup(s.get(f"{BASE}Navegar.aspx?{qs}", timeout=40).text, "html.parser")
+    nav_html = s.get(f"{BASE}Navegar.aspx?{qs}", timeout=40).text
+    corte.registrar("clima-tematico.json", nav_html, [year],
+                    "Navegador de cambio climático MEF (apps5.mineco.gob.pe/cambioclimatico2023)")
+    soup = BeautifulSoup(nav_html, "html.parser")
     d = fields(soup)
     btn_name, btn_val = CORTES[corte_k]
     d[btn_name] = btn_val
@@ -125,12 +130,13 @@ def scrape_cut(s, year, medida_k, atrib_k, corte_k):
     return rows
 
 
-def run(years, cortes=("funcion", "departamento", "categoria")):
+def run(years, cortes=("funcion", "departamento", "categoria"), force=False):
     existing = []
     if os.path.exists(OUT):
         with open(OUT, encoding="utf-8") as fh:
             existing = json.load(fh)
-    done = {(r["year"], r["medida"], r["atribucion"], r["corte"]) for r in existing}
+    done = {(r["year"], r["medida"], r["atribucion"], r["corte"]) for r in existing
+            if not (force and r["year"] in years)}
     s = new_session()
     out = list(existing)
     for year in years:
@@ -159,7 +165,7 @@ def run(years, cortes=("funcion", "departamento", "categoria")):
 
 
 def main():
-    arg = sys.argv[1] if len(sys.argv) > 1 else "test"
+    arg = next((a for a in sys.argv[1:] if a != "--force"), "test")
     if arg == "test":
         s = new_session()
         rows = scrape_cut(s, 2024, "Adaptacion", "Directa", "funcion")
@@ -167,8 +173,10 @@ def main():
         for r in rows[:8]:
             print(f"   {r['code']}: {r['nombre'][:40]:40} PIM {r['pim']/1e6:8.1f} M  dev {r['devengado']/1e6:8.1f} M")
         return
-    years = YEARS_ALL if arg == "all" else [int(a) for a in sys.argv[1:]]
-    run(years)
+    force = "--force" in sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a != "--force"]
+    years = YEARS_ALL if args[0] == "all" else [int(a) for a in args]
+    run(years, force=force)
 
 
 if __name__ == "__main__":

@@ -4,17 +4,10 @@ import { soles, solesCompact, pct, ejecucion } from '../lib/format'
 import { Card, CardHeader, HelpTip, Pill, Select, Loading } from './ui'
 import { Chart } from '../components/Chart'
 import { downloadCSV } from '../lib/download'
+import { API_BASE } from '../lib/data'
 
-/* ───────────────────────── API (resolución local, sin importar de data.ts) ───────────────────────── */
+/* ───────────────────────── API (dominio centralizado en lib/data.ts) ───────────────────────── */
 
-function resolveApiBase(): string {
-  if (typeof location !== 'undefined') {
-    const h = location.hostname
-    if (h === 'qhaway.org' || h === 'www.qhaway.org') return ''
-  }
-  return 'https://qhaway.tunky.net'
-}
-const API_BASE = resolveApiBase()
 const API_TIMEOUT_MS = 8000
 
 /** Resultado de un fetch tolerante: distingue 404 (función en preparación) de error real. */
@@ -37,37 +30,47 @@ async function apiJSON<T>(path: string, signal: AbortSignal): Promise<{ kind: 'o
   }
 }
 
-/** Hook genérico de carga tolerante a 404. */
-function useApi<T>(path: string | null, deps: unknown[]): FetchState<T> {
-  const [state, setState] = useState<FetchState<T>>({ status: 'loading' })
+/**
+ * Hook de carga tolerante a 404. El resultado se guarda junto al `path` que lo produjo:
+ * si el path actual es otro, el estado derivado es 'loading' (sin setState síncrono en
+ * el efecto).
+ */
+function useApi<T>(path: string | null): FetchState<T> {
+  const [res, setRes] = useState<{ path: string; state: FetchState<T> } | null>(null)
   useEffect(() => {
-    if (path == null) { setState({ status: 'empty' }); return }
+    if (path == null) return
     const ctrl = new AbortController()
     const t = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS)
-    setState({ status: 'loading' })
     apiJSON<T>(path, ctrl.signal).then((r) => {
       clearTimeout(t)
       if (ctrl.signal.aborted) return
-      if (r.kind === 'missing') setState({ status: 'missing' })
-      else if (r.kind === 'error') setState({ status: 'error', msg: r.msg })
-      else if (Array.isArray(r.data) && r.data.length === 0) setState({ status: 'empty' })
-      else setState({ status: 'ok', data: r.data })
+      let state: FetchState<T>
+      if (r.kind === 'missing') state = { status: 'missing' }
+      else if (r.kind === 'error') state = { status: 'error', msg: r.msg }
+      else if (Array.isArray(r.data) && r.data.length === 0) state = { status: 'empty' }
+      else state = { status: 'ok', data: r.data }
+      setRes({ path, state })
     })
     return () => { clearTimeout(t); ctrl.abort() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  return state
+  }, [path])
+  if (path == null) return { status: 'empty' }
+  return res && res.path === path ? res.state : { status: 'loading' }
+}
+
+/** /api/dim-values devuelve strings o {valor}: normaliza a string. */
+function valores(xs: (string | DimValor)[] | undefined): string[] {
+  return (xs ?? []).map((x) => (typeof x === 'string' ? x : x.valor)).filter(Boolean)
 }
 
 /* ───────────────────────── Tipos del contrato ───────────────────────── */
 
 interface DimValor { valor: string }
 interface DimValues {
-  categoria_ppto: DimValor[]
-  tipo_gasto: DimValor[]
-  funcion: DimValor[]
-  nivel: DimValor[]
-  granularYears: number[]
+  categoria_ppto?: (string | DimValor)[]
+  tipo_gasto?: (string | DimValor)[]
+  funcion?: (string | DimValor)[]
+  nivel?: (string | DimValor)[]
+  granularYears?: number[]
 }
 
 /** Forma de /api/drill. */
@@ -119,29 +122,36 @@ const NIVELES_FIJOS = ['GOBIERNO NACIONAL', 'GOBIERNOS REGIONALES', 'GOBIERNOS L
 
 /* ───────────────────────── Componente ───────────────────────── */
 
-export default function DrillPresupuesto() {
+export default function DrillPresupuesto({ fallbackYear = new Date().getFullYear() }: { fallbackYear?: number } = {}) {
   // Dimensiones para selectores
-  const dims = useApi<DimValues>('/api/dim-values', [])
+  const dims = useApi<DimValues>('/api/dim-values')
 
-  // Año: por defecto el último granular si existe; si no, 2025.
-  const granularYears = dims.status === 'ok' ? (dims.data.granularYears ?? []) : []
-  const defaultYear = granularYears.length ? Math.max(...granularYears) : 2025
-  const [year, setYear] = useState<number>(defaultYear)
-  // sincroniza el año por defecto cuando llegan las dimensiones
-  useEffect(() => {
-    if (dims.status === 'ok' && granularYears.length && !granularYears.includes(year)) {
-      setYear(Math.max(...granularYears))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dims.status])
+  // Año: por defecto el último granular. Mientras no llegan las dimensiones, el último
+  // año que la API reporta (prop `fallbackYear`, sale de meta).
+  const granularYears = useMemo(
+    () => (dims.status === 'ok' ? (dims.data.granularYears ?? []) : []),
+    [dims],
+  )
+  const defaultYear = granularYears.length ? Math.max(...granularYears) : fallbackYear
+  // Año elegido por el usuario (null = usar el por defecto). Derivado, sin efecto de sincronía.
+  const [yearSel, setYearSel] = useState<number | null>(null)
+  const year = yearSel != null && (!granularYears.length || granularYears.includes(yearSel))
+    ? yearSel
+    : defaultYear
 
   // Filtros globales de cabecera (se inyectan como filtros del drill desde la raíz)
-  const [fNivel, setFNivel] = useState<string>('Todos')
-  const [fCategoria, setFCategoria] = useState<string>('Todas')
-  const [fFuncion, setFFuncion] = useState<string>('Todas')
+  const [fNivel, setFNivelRaw] = useState<string>('Todos')
+  const [fCategoria, setFCategoriaRaw] = useState<string>('Todas')
+  const [fFuncion, setFFuncionRaw] = useState<string>('Todas')
 
   // Pila de navegación: cada entrada es {step, clave, ubigeo?} del valor elegido.
   const [path, setPath] = useState<PathEntry[]>([])
+
+  // Cambiar año o filtros de cabecera reinicia la ruta (en el handler, no en un efecto).
+  const setYear = (y: number) => { setYearSel(y); setPath([]) }
+  const setFNivel = (v: string) => { setFNivelRaw(v); setPath([]) }
+  const setFCategoria = (v: string) => { setFCategoriaRaw(v); setPath([]) }
+  const setFFuncion = (v: string) => { setFFuncionRaw(v); setPath([]) }
 
   // Construye los query params de /api/drill a partir de la ruta + filtros de cabecera.
   // Para la rama territorial, departamento/provincia usan el NOMBRE (clave) y distrito el ubigeo.
@@ -168,7 +178,7 @@ export default function DrillPresupuesto() {
     return p.toString()
   }, [path, year, fNivel, fCategoria, fFuncion])
 
-  const drill = useApi<DrillResponse>(`/api/drill?${drillQuery}`, [drillQuery])
+  const drill = useApi<DrillResponse>(`/api/drill?${drillQuery}`)
 
   /* ── Construcción de las filas del nivel actual ── */
   const resp = drill.status === 'ok' ? drill.data : null
@@ -210,9 +220,6 @@ export default function DrillPresupuesto() {
 
   const volver = useCallback(() => setPath((p) => p.slice(0, -1)), [])
 
-  // Reset de la ruta al cambiar de año o filtros de cabecera
-  useEffect(() => { setPath([]) }, [year, fNivel, fCategoria, fFuncion])
-
   /* ── Año granular: ¿pidió un año sin detalle granular? ── */
   const granularKnown = granularYears.length > 0
   const yearTieneGranular = !granularKnown || granularYears.includes(year)
@@ -224,17 +231,16 @@ export default function DrillPresupuesto() {
   }, [granularYears, defaultYear])
 
   const nivelOpts = useMemo(() => {
-    const base = dims.status === 'ok' && dims.data.nivel.length
-      ? dims.data.nivel.map((n) => n.valor)
-      : NIVELES_FIJOS
+    const deApi = dims.status === 'ok' ? valores(dims.data.nivel) : []
+    const base = deApi.length ? deApi : NIVELES_FIJOS
     return [{ value: 'Todos', label: 'Todos los niveles' }, ...base.map((v) => ({ value: v, label: niceNivel(v) }))]
   }, [dims])
   const categoriaOpts = useMemo(() => {
-    const base = dims.status === 'ok' ? dims.data.categoria_ppto.map((c) => c.valor) : []
+    const base = dims.status === 'ok' ? valores(dims.data.categoria_ppto) : []
     return [{ value: 'Todas', label: 'Todas las categorías' }, ...base.map((v) => ({ value: v, label: v }))]
   }, [dims])
   const funcionOpts = useMemo(() => {
-    const base = dims.status === 'ok' ? dims.data.funcion.map((f) => f.valor) : []
+    const base = dims.status === 'ok' ? valores(dims.data.funcion) : []
     return [{ value: 'Todas', label: 'Todas las funciones' }, ...base.map((v) => ({ value: v, label: v }))]
   }, [dims])
 
@@ -268,7 +274,7 @@ export default function DrillPresupuesto() {
             las migas (o «volver») para retroceder. Cada paso muestra el <strong>PIM</strong> y el
             <strong> devengado</strong> de sus hijos, calculados en vivo por el servidor
             (<code>/api/drill</code>). El detalle de categoría, programa, función y proyecto solo
-            existe para los años con cubo granular (p. ej. 2025). El desglose territorial es por
+            existe para los años con cubo granular{granularYears.length ? ` (${granularYears.join(", ")})` : ""}. El desglose territorial es por
             <strong> unidad ejecutora</strong>, no por lugar de obra.
           </HelpTip>
         }

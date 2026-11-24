@@ -119,9 +119,10 @@ export default function CommandSearch() {
   const nav = useNavigate()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
+  const [activeRaw, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const indexingRef = useRef(false)
 
   // Índice de items (se carga perezosamente al primer abrir).
   const [items, setItems] = useState<Item[]>([])
@@ -153,11 +154,12 @@ export default function CommandSearch() {
 
     try {
       const geo = await getGeoJSON()
-      const feats: any[] = geo?.features ?? []
+      type DistProps = { IDDIST?: string; NOMBDIST?: string; NOMBPROV?: string; NOMBDEP?: string }
+      const feats: { properties?: DistProps }[] = geo?.features ?? []
       for (const f of feats) {
-        const p = f?.properties ?? {}
-        const ubigeo: string = p.IDDIST
-        const dist: string = p.NOMBDIST
+        const p: DistProps = f?.properties ?? {}
+        const ubigeo = p.IDDIST
+        const dist = p.NOMBDIST
         if (!ubigeo || !dist) continue
         const prov: string = p.NOMBPROV || ''
         const dep: string = p.NOMBDEP || ''
@@ -268,6 +270,7 @@ export default function CommandSearch() {
       const isToggle = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)
       if (isToggle) {
         e.preventDefault()
+        setActive(0)
         setOpen((o) => !o)
         return
       }
@@ -279,7 +282,10 @@ export default function CommandSearch() {
 
   // También permitir que el header lo abra disparando este evento personalizado.
   useEffect(() => {
-    const openHandler = () => setOpen(true)
+    const openHandler = () => {
+      setActive(0)
+      setOpen(true)
+    }
     window.addEventListener('qhaway:open-search', openHandler)
     return () => window.removeEventListener('qhaway:open-search', openHandler)
   }, [])
@@ -287,8 +293,13 @@ export default function CommandSearch() {
   // Al abrir: cargar índice (perezoso), enfocar input, resetear estado.
   useEffect(() => {
     if (!open) return
-    setActive(0)
-    if (!loaded) void buildIndex()
+    // (el índice activo se resetea en los handlers que abren la paleta)
+    // El índice se construye fuera del cuerpo síncrono del efecto (microtarea) y una sola
+    // vez aunque se abra/cierre rápido: evita setState en cascada dentro del efecto.
+    if (!loaded && !indexingRef.current) {
+      indexingRef.current = true
+      void Promise.resolve().then(buildIndex)
+    }
     const t = setTimeout(() => inputRef.current?.focus(), 30)
     // Bloquea el scroll del fondo mientras está abierto.
     const prev = document.body.style.overflow
@@ -311,10 +322,8 @@ export default function CommandSearch() {
     return scored.slice(0, 30).map((x) => x.it)
   }, [query, items, secciones])
 
-  // Mantén `active` dentro de rango cuando cambian los resultados.
-  useEffect(() => {
-    setActive((a) => (results.length ? Math.min(a, results.length - 1) : 0))
-  }, [results.length])
+  // Mantén `active` dentro de rango cuando cambian los resultados (derivado en render).
+  const active = results.length ? Math.min(activeRaw, results.length - 1) : 0
 
   const choose = useCallback(
     (it: Item | undefined) => {
@@ -329,10 +338,10 @@ export default function CommandSearch() {
   const onInputKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActive((a) => (results.length ? (a + 1) % results.length : 0))
+      setActive(results.length ? (active + 1) % results.length : 0)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setActive((a) => (results.length ? (a - 1 + results.length) % results.length : 0))
+      setActive(results.length ? (active - 1 + results.length) % results.length : 0)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       choose(results[active])

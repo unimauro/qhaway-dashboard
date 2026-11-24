@@ -1,37 +1,86 @@
 name: Actualizar datos del MEF (mensual)
 
-# Corre el último viernes de cada mes a las 06:00 (Perú, UTC-5 → 11:00 UTC).
+# Corre el ÚLTIMO VIERNES de cada mes a las 06:00 (Perú, UTC-5 → 11:00 UTC).
+#
+# Ojo con cron: si se fijan día-del-mes Y día-de-semana, la regla es OR, no AND.
+# El cron anterior ('0 11 28-31 * 5') corría TODOS los viernes y además los días
+# 28-31 (por eso había commits de datos semanales). Ahora el cron corre los viernes
+# y el primer paso descarta los que no son el último del mes (si dentro de 7 días
+# ya es otro mes, hoy es el último viernes). Para volver a una actualización semanal,
+# basta con quitar el paso "¿Es el último viernes del mes?".
+#
 # Regenera los JSON de presupuesto desde la API del MEF y, si hay cambios, hace
-# commit; el deploy a Pages se dispara solo por el push. GitHub Actions es gratis
-# en repos públicos: costo de infraestructura ≈ S/ 0.
+# commit. Ese push (con GITHUB_TOKEN) no dispara deploy.yml por sí mismo: deploy.yml
+# escucha este workflow con `workflow_run`. Si algo falla, abre/actualiza un issue.
+# GitHub Actions es gratis en repos públicos: costo de infraestructura ≈ S/ 0.
 on:
   schedule:
-    - cron: '0 11 28-31 * 5'   # días 28-31 que caigan en viernes (último viernes del mes)
-  workflow_dispatch:            # permite ejecutarlo a mano desde la pestaña Actions
+    - cron: '0 11 * * 5'   # todos los viernes; el filtro de "último del mes" va en el job
+  workflow_dispatch:        # a mano desde la pestaña Actions (siempre corre)
 
 permissions:
   contents: write
+  issues: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: ¿Es el último viernes del mes?
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$(date -u +%m)" != "$(date -u -d '+7 days' +%m)" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No es el último viernes del mes; no se actualiza."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/setup-python@v6
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: '3.12'
       - name: Descubrir tablas anuales del MEF
+        if: steps.gate.outputs.run == 'true'
         run: python etl/discover_annual.py
       - name: Regenerar JSON de presupuesto
+        if: steps.gate.outputs.run == 'true'
         run: python etl/build_mef.py
       - name: Commit si hay cambios
+        if: steps.gate.outputs.run == 'true'
         run: |
           git config user.name "qhaway-bot"
-          git config user.email "bot@users.noreplace.github.com"
+          git config user.email "bot@users.noreply.github.com"
           git add public/data/*.json
           if git diff --staged --quiet; then
             echo "Sin cambios en los datos."
           else
             git commit -m "datos: actualización mensual MEF ($(date +%Y-%m-%d))"
             git push
+          fi
+
+      - name: Avisar del fallo (issue)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Falló la actualización mensual de datos del MEF"
+          BODY="La corrida ${RUN_URL} terminó con error ($(date -u +%Y-%m-%dT%H:%MZ)). Revisa el log; los datos publicados siguen siendo los de la última corrida exitosa."
+          NUM=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
           fi

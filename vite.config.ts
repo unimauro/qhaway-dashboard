@@ -8,6 +8,9 @@ export default defineConfig({
   plugins: [react()],
   base: process.env.VITE_BASE || '/qhaway-dashboard/',
   build: {
-    chunkSizeWarningLimit: 1600,
+    // El chunk más pesado es el de ECharts modular (~740 kB min / ~250 kB gzip, ver
+    // src/components/Chart.tsx). Antes el límite era 1600 para silenciar el ECharts
+    // completo (1,15 MB); 800 avisa si alguien vuelve a importar `echarts` entero.
+    chunkSizeWarningLimit: 800,
   },
 })

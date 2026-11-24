@@ -6,25 +6,49 @@ import type {
 
 const BASE = import.meta.env.BASE_URL // '/qhaway-dashboard/'
 
-// API del VPS (PostgreSQL): sirve el histórico completo por año. Si está caída o un
-// año no está cargado aún, se cae con gracia a los JSON estáticos del repo.
-// En qhaway.org el propio Caddy proxquea /api/* al backend → usamos same-origin (''),
-// sin CORS. En GitHub Pages / dev se usa la URL absoluta del VPS (con CORS + rate limit).
+// API (PostgreSQL) servida en el dominio canónico. Si está caída o un año no está
+// cargado aún, se cae con gracia a los JSON estáticos del repo.
+// En qhaway.org el propio Caddy proxea /api/* al backend → same-origin (''), sin CORS.
+// En GitHub Pages / dev se usa la URL absoluta (CORS permite unimauro.github.io).
+// ÚNICO lugar donde vive el dominio de la API: el resto de la app importa de aquí.
+export const API_ORIGIN = 'https://qhaway.org'
+export const API_DOCS_URL = `${API_ORIGIN}/docs`
+export const API_REDOC_URL = `${API_ORIGIN}/redoc`
+
 function resolveApiBase(): string {
   if (typeof location !== 'undefined') {
     const h = location.hostname
     if (h === 'qhaway.org' || h === 'www.qhaway.org') return ''
   }
-  return 'https://qhaway.tunky.net'
+  return API_ORIGIN
 }
 export const API_BASE = resolveApiBase()
 
 const cache = new Map<string, unknown>()
 
+/** De dónde salió realmente cada archivo pedido a loadJSON (para mostrar su corte). */
+export type Origen = 'api' | 'estatico'
+const origenes = new Map<string, Origen>()
+export const origenDe = (path: string): Origen | undefined => origenes.get(path)
+
+// Respaldo estático distinto al nombre lógico. serie-nacional.json (estático) es una
+// muestra antigua e incompleta; el respaldo bueno de la serie es la histórica oficial.
+const STATIC_FALLBACK: Record<string, string> = {
+  'serie-nacional.json': 'serie-historica-oficial.json',
+}
+
 /** Mapea un archivo estático a su endpoint de la API (o null si solo es estático). */
 function apiEndpoint(path: string): string | null {
   if (path === 'serie-nacional.json') return 'serie-nacional'
   if (path === 'por-departamento-historico.json') return 'por-departamento-historico'
+  // Datasets scrapeados (Consulta Amigable / navegador clima) — ahora también en la DB.
+  // Mismo JSON que el archivo estático; si el endpoint aún no existe (404) → estático.
+  if (path === 'por-programa-historico.json') return 'por-programa-historico'
+  if (path === 'programa-territorio-clima.json') return 'programa-territorio-clima'
+  if (path === 'clima-tematico.json') return 'clima-tematico'
+  if (path === 'mitigacion-2021-2027.json') return 'mitigacion'
+  if (path === 'cortes.json') return 'cortes'
+  if (path === 'riesgos.json') return 'riesgos'
   let m: RegExpMatchArray | null
   if ((m = path.match(/^por-distrito-(\d{4})\.json$/))) return `por-distrito/${m[1]}`
   if ((m = path.match(/^por-funcion-(\d{4})\.json$/))) return `por-funcion/${m[1]}`
@@ -63,9 +87,13 @@ export async function loadJSON<T>(path: string): Promise<T> {
       const res = await fetchWithTimeout(`${API_BASE}/api/${ep}`, API_TIMEOUT_MS)
       if (res.ok) {
         const json = (await res.json()) as T
-        // Si la API aún no tiene ese dato cargado (arreglo vacío), usa el estático.
-        if (!(Array.isArray(json) && json.length === 0)) {
+        // Si la API aún no tiene ese dato cargado (arreglo u objeto vacío), usa el estático.
+        const vacio = Array.isArray(json)
+          ? json.length === 0
+          : json == null || (typeof json === 'object' && Object.keys(json as object).length === 0)
+        if (!vacio) {
           cache.set(path, json)
+          origenes.set(path, 'api')
           return json
         }
       }
@@ -73,8 +101,16 @@ export async function loadJSON<T>(path: string): Promise<T> {
       /* API caída → fallback a estático */
     }
   }
-  const json = await fromStatic<T>(path)
+  const alt = STATIC_FALLBACK[path]
+  let json: T
+  try {
+    json = await fromStatic<T>(alt ?? path)
+  } catch (e) {
+    if (!alt) throw e
+    json = await fromStatic<T>(path)
+  }
   cache.set(path, json)
+  origenes.set(path, 'estatico')
   return json
 }
 
@@ -101,8 +137,11 @@ export async function getMeta(): Promise<Meta> {
         ...stat,
         years: live.years?.length ? live.years : stat.years,
         latestYear: live.latestYear ?? stat.latestYear,
-        distritoYears: live.distritoYears ?? stat.distritoYears,
+        distritoYear: live.distritoYear ?? stat.distritoYear,
+        distritoYears: live.distritoYears?.length ? live.distritoYears : stat.distritoYears,
         lastUpdate: live.lastUpdate ?? stat.lastUpdate,
+        // Fecha de corte por año ({"2026": "2026-11-23"}); el backend nuevo la expone.
+        cortes: live.cortes ?? stat.cortes,
       }
     }
   } catch {
@@ -111,15 +150,122 @@ export async function getMeta(): Promise<Meta> {
   cache.set('__meta_merged', merged)
   return merged
 }
+
+/* ── Helpers de meta: años y fechas de corte ── */
+
+/** Años con detalle distrital, ascendentes (API `distritoYears`; si falta, `distritoYear`). */
+export function aniosDistritales(meta: Meta): number[] {
+  const ys = meta.distritoYears?.length
+    ? meta.distritoYears
+    : meta.distritoYear != null ? [meta.distritoYear] : []
+  return [...new Set(ys)].sort((a, b) => a - b)
+}
+
+/**
+ * Año distrital "por defecto". `meta.distritoYear` (estático) solo se respeta si la API lo
+ * confirma en `distritoYears`; si no, el más reciente cargado; si no hay nada, latestYear.
+ */
+export function anioDistrital(meta: Meta): number {
+  const ys = aniosDistritales(meta)
+  if (meta.distritoYear != null && (!meta.distritoYears?.length || ys.includes(meta.distritoYear))) {
+    return meta.distritoYear
+  }
+  return ys.length ? ys[ys.length - 1] : meta.latestYear
+}
+
+/** "2012–2026" (o "2025" si es uno solo, "" si no hay). */
+export function rangoAnios(ys: number[]): string {
+  if (!ys.length) return ''
+  const min = Math.min(...ys)
+  const max = Math.max(...ys)
+  return min === max ? String(min) : `${min}–${max}`
+}
+
+/**
+ * Ejercicio en curso (parcial): el último año si aún no terminó o si meta lo marca parcial.
+ * undefined si el último año ya está cerrado.
+ */
+export function anioEnCurso(meta: Meta): number | undefined {
+  const y = meta.latestYear
+  if (meta.parcial && String(y) in meta.parcial) return y
+  return y >= new Date().getFullYear() ? y : undefined
+}
+
+/**
+ * Fecha de corte de los datos de la API para un año. Soporta el formato nuevo
+ * (`meta.cortes = {"2026": "2026-11-23"}`) y el antiguo (solo `lastUpdate`, que aplica
+ * al año en curso). Años cerrados sin corte explícito → undefined (cierre anual).
+ */
+export function corteApi(meta: Meta, year: number): string | undefined {
+  const c = meta.cortes?.[String(year)]
+  if (c) return c
+  return year === meta.latestYear ? meta.lastUpdate : undefined
+}
+
+/** Fecha de corte de un dataset scrapeado según cortes.json (API /api/cortes o estático). */
+export interface CorteArchivo { fecha_corte: string; anios?: number[]; fuente?: string; generado?: string }
+export async function getCortesEstaticos(): Promise<Record<string, CorteArchivo>> {
+  try {
+    return await loadJSON<Record<string, CorteArchivo>>('cortes.json')
+  } catch {
+    return {}
+  }
+}
+/** Corte de un archivo estático; si se da `year`, solo si ese año está entre sus `anios`. */
+export async function getCorte(archivo: string, year?: number): Promise<string | undefined> {
+  const c = (await getCortesEstaticos())[archivo]
+  if (!c) return undefined
+  if (year != null && c.anios?.length && !c.anios.includes(year)) return undefined
+  return c.fecha_corte
+}
+
+/**
+ * Serie nacional (API /api/serie-nacional; respaldo: serie-historica-oficial.json).
+ * TODAS las vistas que muestran totales nacionales deben salir de aquí.
+ */
 export const getSerieNacional = () => loadJSON<SerieNacional[]>('serie-nacional.json')
+
+export interface SerieConCorte {
+  serie: SerieNacional[]
+  origen: Origen
+  /** Fecha de corte del año (undefined = cierre anual sin fecha publicada). */
+  corte: (year: number) => string | undefined
+}
+/** Serie nacional + de dónde salió + su fecha de corte real por año. */
+export async function getSerieNacionalConCorte(): Promise<SerieConCorte> {
+  const [serie, meta] = await Promise.all([getSerieNacional(), getMeta()])
+  const origen = origenDe('serie-nacional.json') ?? 'estatico'
+  if (origen === 'api') {
+    return { serie, origen, corte: (y) => corteApi(meta, y) }
+  }
+  const archivo = STATIC_FALLBACK['serie-nacional.json']
+  const cortes = await getCortesEstaticos()
+  const c = cortes[archivo]
+  const ultimo = Math.max(...serie.map((r) => r.year))
+  return {
+    serie,
+    origen,
+    corte: (y) => {
+      if (!c) return undefined
+      if (c.anios?.length) return c.anios.includes(y) ? c.fecha_corte : undefined
+      return y === ultimo ? c.fecha_corte : undefined
+    },
+  }
+}
 export const getPorNivel = () => loadJSON<PorNivel[]>('por-nivel-gobierno.json')
 // Desglose por nivel de gobierno para un año concreto (API por-nivel/{año}; 2024-2025).
 export const getPorNivelYear = (year: number) => loadJSON<PorNivel[]>(`por-nivel-${year}.json`)
 // OJO: por-departamento.json solo trae regional+local (subestima ~10× el total). Usamos el
 // histórico por destino META, que SÍ incluye el Gobierno Nacional → PIM por región completo.
+// Año objetivo: el último AÑO CERRADO presente (no el ejercicio en curso), derivado de meta.
 export const getPorDepartamento = async (): Promise<PorDepartamento[]> => {
-  const hist = await loadJSON<PorDepartamento[]>('por-departamento-historico.json')
-  const objetivo = hist.some((r) => r.year === 2025) ? 2025 : Math.max(...hist.map((r) => r.year ?? 0))
+  const [hist, meta] = await Promise.all([
+    loadJSON<PorDepartamento[]>('por-departamento-historico.json'),
+    getMeta().catch(() => undefined),
+  ])
+  const presentes = [...new Set(hist.map((r) => r.year ?? 0))].sort((a, b) => b - a)
+  const enCurso = meta ? anioEnCurso(meta) : undefined
+  const objetivo = presentes.find((y) => y !== enCurso) ?? presentes[0]
   return hist.filter((r) => r.year === objetivo)
 }
 export const getPorDistrito = (year: number) => loadJSON<PorDistrito[]>(`por-distrito-${year}.json`)

@@ -15,9 +15,11 @@ Uso:
   python3 etl/scraper_programa.py 2025            # un año (para probar)
   python3 etl/scraper_programa.py 2026 2025 2024  # varios
   python3 etl/scraper_programa.py all             # 2026..2012
+  python3 etl/scraper_programa.py --force 2026    # re-scrapea años ya hechos (año en curso)
 """
 import requests, re, json, os, time, sys
 from bs4 import BeautifulSoup
+import corte
 
 BASE = "https://apps5.mineco.gob.pe/transparencia/Navegador/"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
@@ -101,6 +103,7 @@ def scrape_year(s, year):
     sel = soup.select_one("#ctl00_CPH1_DrpYear option[selected]")
     if not sel or sel.get_text(strip=True) != str(year):
         raise RuntimeError(f"año no fijado (got {sel.get_text(strip=True) if sel else '?'})")
+    corte.registrar("por-programa-historico.json", html, [year], "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)")
     bname, bval = find_button(soup)
     d = fields(soup, bname, bval)
     g = soup.select_one('input[name=grp1]')
@@ -112,13 +115,14 @@ def scrape_year(s, year):
 
 
 def main():
-    args = [a for a in sys.argv[1:]]
+    force = "--force" in sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a != "--force"]
     years = list(range(2026, 2011, -1)) if (not args or args[0] == "all") else [int(a) for a in args]
     data = {}
     if os.path.exists(OUT):
         for r in json.load(open(OUT)):
             data.setdefault(r["year"], []).append(r)
-    done = set(data.keys())
+    done = set(data.keys()) - (set(years) if force else set())
     print(f"reanudando: años hechos {sorted(done)} · objetivo {years}", flush=True)
     s = new_session()
     for y in years:

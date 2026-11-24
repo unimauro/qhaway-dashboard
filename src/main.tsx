@@ -50,6 +50,7 @@ const Home = lazy(() => import('./pages/Home'))
 const Presupuesto = lazy(() => import('./pages/Presupuesto'))
 const Pisos = lazy(() => import('./pages/Pisos'))
 const Riesgos = lazy(() => import('./pages/Riesgos'))
+const ElNino = lazy(() => import('./pages/ElNino'))
 const Prosperidad = lazy(() => import('./pages/Prosperidad'))
 const Explorador = lazy(() => import('./pages/Explorador'))
 const Clima = lazy(() => import('./pages/Clima'))
@@ -73,6 +74,7 @@ const router = createHashRouter([
       { path: 'presupuesto', element: page(<Presupuesto />) },
       { path: 'pisos', element: page(<Pisos />) },
       { path: 'riesgos', element: page(<Riesgos />) },
+      { path: 'el-nino', element: page(<ElNino />) },
       { path: 'prosperidad', element: page(<Prosperidad />) },
       { path: 'explorador', element: page(<Explorador />) },
       { path: 'clima', element: page(<Clima />) },

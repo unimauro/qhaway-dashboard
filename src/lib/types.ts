@@ -15,6 +15,9 @@ export interface Meta {
   distritoYear?: number
   distritoYears?: number[]  // años con detalle distrital cargado (API VPS)
   lastUpdate: string
+  // Fecha de corte REAL por año ({"2026": "2026-11-23"}). Lo expone /api/meta (backend
+  // nuevo); si falta, el corte del año en curso es lastUpdate. Ver corteApi() en data.ts.
+  cortes?: Record<string, string>
   fases: Fase[]
   sources: FuenteDato[]
   notas: string

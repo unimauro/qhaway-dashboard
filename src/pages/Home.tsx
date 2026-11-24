@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
-import { getMeta, getSerieNacional, loadJSON } from '../lib/data'
+import { getMeta, getSerieNacionalConCorte, anioEnCurso, rangoAnios } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
-import { solesCompact, pct, ejecucion } from '../lib/format'
-import SerieChart, { type PuntoMensual } from '../components/SerieChart'
+import { solesCompact, pct, fecha } from '../lib/format'
+import { ejecucionValida, DEVENGADO_DESDE } from '../lib/reglas'
+import SerieChart from '../components/SerieChart'
 import IntroSplash from '../components/IntroSplash'
 import {
   Card, CardHeader, HelpTip, KPI, Pill, Loading, ErrorBox,
@@ -57,8 +58,8 @@ const MODULOS = [
   {
     to: '/historico',
     icon: '⏱',
-    titulo: 'Evolución Regional 2004-2026',
-    frase: 'Presupuesto por departamento para cada uno de 22 años: mapa por año, ranking y serie temporal regional.',
+    titulo: 'Evolución Regional',
+    frase: 'Presupuesto por departamento año por año: mapa por año, ranking y serie temporal regional.',
   },
   {
     to: '/cobertura',
@@ -70,11 +71,8 @@ const MODULOS = [
 
 function KpisYGrafico() {
   const meta = useAsync(getMeta, [])
-  const serie = useAsync(getSerieNacional, [])
-  // Evolución mensual del año vigente (opcional; si no existe, el gráfico usa barras de fases).
-  const mensual = useAsync(() => loadJSON<PuntoMensual[]>('evolucion-mensual-2025.json'), [])
-  // Serie histórica oficial (Presupuesto del Sector Público, cierre anual, MEF).
-  const oficial = useAsync(() => loadJSON<import('../lib/types').SerieNacional[]>('serie-historica-oficial.json'), [])
+  // UNA sola fuente para KPI y gráfico: /api/serie-nacional (respaldo: serie histórica oficial).
+  const serie = useAsync(getSerieNacionalConCorte, [])
 
   const loading = meta.loading || serie.loading
   const error = meta.error || serie.error
@@ -84,14 +82,17 @@ function KpisYGrafico() {
   if (!meta.data || !serie.data) return <Loading />
 
   const m = meta.data
-  // Última serie nacional disponible
-  const serieOrdenada = [...serie.data].sort((a, b) => a.year - b.year)
+  const serieOrdenada = [...serie.data.serie].sort((a, b) => a.year - b.year)
   const ultima = serieOrdenada[serieOrdenada.length - 1]
-  const ejec = ultima ? ejecucion(ultima.devengado, ultima.pim) : 0
+  const ejec = ultima ? ejecucionValida(ultima.year, ultima.devengado, ultima.pim) : null
   const nFuentes = m.sources.length
+  const corte = ultima ? serie.data.corte(ultima.year) : undefined
+  const enCurso = ultima != null && ultima.year === anioEnCurso(m)
+  const rango = rangoAnios(serieOrdenada.map((r) => r.year))
 
-  // Color de ejecución (rojo/ámbar/verde)
-  const ejecTone: 'warn' | 'good' | 'brand' = ejec > 0.8 ? 'good' : ejec >= 0.5 ? 'warn' : 'warn'
+  // Semáforo de ejecución: verde >80%, ámbar 50–80%, rojo/neutro <50% (o en curso).
+  const ejecTone: 'warn' | 'good' | 'neutral' =
+    ejec == null ? 'neutral' : ejec > 0.8 ? 'good' : ejec >= 0.5 ? 'warn' : 'neutral'
 
   return (
     <>
@@ -106,7 +107,7 @@ function KpisYGrafico() {
         <KPI
           label={`Ejecución nacional ${ultima?.year ?? ''}`}
           value={pct(ejec)}
-          sub="Devengado / PIM"
+          sub={enCurso ? `Devengado / PIM · ejercicio en curso` : 'Devengado / PIM'}
         />
         <KPI
           label="Distritos"
@@ -122,31 +123,29 @@ function KpisYGrafico() {
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Pill tone={ejecTone}>Ejecución {pct(ejec)} en {ultima?.year ?? '—'}</Pill>
-        <Pill tone="neutral">Actualizado: {m.lastUpdate}</Pill>
+        <Pill tone="neutral">
+          {corte ? `Corte ${ultima?.year}: ${fecha(corte)}` : `Actualizado: ${fecha(m.lastUpdate)}`}
+        </Pill>
+        {serie.data.origen === 'estatico' && <Pill tone="warn">respaldo estático (API no disponible)</Pill>}
         <Pill tone="warn">Cifras agregadas, aprox. por fecha de corte</Pill>
       </div>
 
       <Card className="mt-4">
         <CardHeader
-          title="Presupuesto público — tendencia anual 2004-2026"
-          subtitle="PIM y devengado por año · MEF Consulta Amigable (por destino territorial)"
+          title={`Presupuesto público — tendencia anual ${rango}`}
+          subtitle="PIM y devengado por año · MEF (datos abiertos SIAF)"
           help={
             <HelpTip>
-              Serie histórica del gasto público (22 años) construida con el scraper de
-              la Consulta Amigable del MEF, por destino territorial. Las barras son el
-              PIM y la línea el devengado. Consistente con el detalle distrital 2025.
-              2026 está en ejecución. Años previos a 2004 y 2005 tienen vacíos de
-              atribución geográfica en la fuente. No compares años sin considerar
-              inflación (soles corrientes).
+              Serie nacional del gasto público ({serieOrdenada.length} años), la misma que usan los
+              indicadores de arriba y la sección Presupuesto. Las barras son el PIM y el
+              devengado. {enCurso && ultima ? `${ultima.year} está en ejecución${corte ? ` (corte al ${fecha(corte)})` : ''}. ` : ''}
+              El devengado solo es confiable desde {DEVENGADO_DESDE}; antes se muestra sin dato.
+              No compares años sin considerar inflación (soles corrientes).
             </HelpTip>
           }
         />
         <div className="px-2 pb-3">
-          <SerieChart
-            serie={oficial.data && oficial.data.length >= 2 ? oficial.data : serieOrdenada}
-            mensual={mensual.data ?? undefined}
-            height={320}
-          />
+          <SerieChart serie={serieOrdenada} height={320} />
         </div>
       </Card>
     </>
