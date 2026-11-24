@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS gasto_nivel (ano INT, nivel TEXT, pia NUMERIC, pim NU
 CREATE TABLE IF NOT EXISTS gasto_meta_funcion (ano INT, ubigeo TEXT, departamento TEXT, funcion TEXT, nivel TEXT, pim NUMERIC, devengado NUMERIC);
 CREATE TABLE IF NOT EXISTS gasto_meta_fuente (ano INT, ubigeo TEXT, departamento TEXT, fuente TEXT, nivel TEXT, pim NUMERIC, devengado NUMERIC);
 CREATE TABLE IF NOT EXISTS gasto_depto_hist (ano INT, ubigeo TEXT, departamento TEXT, pia NUMERIC, pim NUMERIC, certificado NUMERIC, devengado NUMERIC, girado NUMERIC);
+CREATE TABLE IF NOT EXISTS carga_log (id BIGSERIAL PRIMARY KEY, ano INT NOT NULL, fuente_url TEXT, last_modified TIMESTAMPTZ, filas BIGINT, cargado_en TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS ix_dist_ano ON gasto_distrito(ano);
 CREATE INDEX IF NOT EXISTS ix_mf_ano ON gasto_meta_funcion(ano);
 CREATE INDEX IF NOT EXISTS ix_mfu_ano ON gasto_meta_fuente(ano);
@@ -37,6 +38,12 @@ def g(d, *keys):
     return 0
 
 
+def ejec(r, k):
+    """certificado/devengado/girado de años <2012 vienen mal del scraper de la Consulta Amigable
+    (Compromiso y Avance % en vez de Certificado/Devengado/Girado) → NULL, no basura."""
+    return None if r["year"] < 2012 else g(r, k)
+
+
 def main():
     with psycopg.connect(DB) as conn:
         with conn.cursor() as c:
@@ -48,17 +55,20 @@ def main():
             for r in serie:
                 c.execute("DELETE FROM gasto_nacional WHERE ano=%s", (r["year"],))
                 c.execute("INSERT INTO gasto_nacional VALUES (%s,%s,%s,%s,%s,%s)",
-                          (r["year"], g(r, "pia"), g(r, "pim"), g(r, "certificado"), g(r, "devengado"), g(r, "girado")))
+                          (r["year"], g(r, "pia"), g(r, "pim"), ejec(r, "certificado"), ejec(r, "devengado"), ejec(r, "girado")))
             print(f"gasto_nacional: {len(serie)} años")
 
             # regional histórico (22 años)
             dh = j("por-departamento-historico.json") or []
+            # 2005 viene desalineado (PIA 0 en todos los deptos): no se carga si sigue así.
+            if sum(g(r, "pia") or 0 for r in dh if r["year"] == 2005) == 0:
+                dh = [r for r in dh if r["year"] != 2005]
             anos = set(r["year"] for r in dh)
             for a in anos:
                 c.execute("DELETE FROM gasto_depto_hist WHERE ano=%s", (a,))
             c.executemany("INSERT INTO gasto_depto_hist VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                           [(r["year"], r["ubigeo"], r["departamento"], g(r, "pia"), g(r, "pim"),
-                            g(r, "certificado"), g(r, "devengado"), g(r, "girado")) for r in dh])
+                            ejec(r, "certificado"), ejec(r, "devengado"), ejec(r, "girado")) for r in dh])
             print(f"gasto_depto_hist: {len(dh)} filas, {len(anos)} años")
 
             # distrital + función/sector/explorador por año (archivos por-distrito-*.json)

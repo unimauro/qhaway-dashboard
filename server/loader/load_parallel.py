@@ -1,66 +1,51 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Orquestador PARALELO de la migración (reusa load.py).
+"""Orquestador PARALELO (reusa load.process_year: ZIP→validación→carga→carga_log).
 
-El cuello de botella es la descarga del MEF (throttle ~0.3 MB/s POR CONEXIÓN), no el
-VPS. Por eso bajamos varios años a la vez: cada año es independiente en la base
-(DELETE+INSERT WHERE ano=y), así que cada hilo usa su propia conexión y NO hay colisión.
-La descarga (curl, subprocess) sí paraleliza de verdad; la agregación (GIL) se serializa
-pero es ~minutos frente a horas de descarga, así que no importa.
+Con los ZIP (0.3–0.7 GB) la descarga ya no es el cuello de botella extremo que era con los CSV
+de ~10 GB, pero sigue conviniendo bajar varios años a la vez. Cada año es independiente en la
+base (DELETE+INSERT WHERE ano=y en una transacción), así que cada hilo usa su propia conexión.
+La agregación (GIL) se serializa; no importa.
 
-Uso (dentro del contenedor del loader, con DATABASE_URL):
-  python load_parallel.py 2023 2022 2021 ... 2012 2026
-  PAR_WORKERS=3 python load_parallel.py all     # 2012..2026 (salta los ya cargados)
+Uso (contenedor del loader, con DATABASE_URL):
+  python load_parallel.py 2026 2025 2024 2023 2022 2021
+  PAR_WORKERS=3 python load_parallel.py all          # 2012..año actual
+  python load_parallel.py --force 2026               # recarga aunque el archivo no haya cambiado
 
-Salta automáticamente los años que ya tienen detalle distrital cargado (idempotente).
+Salta los años cuyo archivo del MEF no cambió desde la última carga (según carga_log).
+Nota: el control de PIM ±40 % usa el año anterior YA cargado; en una carga paralela desde cero
+ese año puede no estar aún → se omite ese control (queda un AVISO en el log).
 """
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import psycopg
-import load  # módulo existente en /loader/load.py
+import load  # /loader/load.py
 
 DB = load.DB
 WORKERS = int(os.environ.get("PAR_WORKERS", "3"))
 
 
-def already_loaded(year: int) -> bool:
-    with psycopg.connect(DB) as c:
-        n = c.execute("SELECT count(*) FROM gasto_distrito WHERE ano=%s", (year,)).fetchone()[0]
-    return n > 0
-
-
-def do_year(year: int) -> str:
+def do_year(year: int, flags: set) -> str:
     try:
-        if already_loaded(year):
-            return f"[{year}] ya cargado → skip"
-        path = load.download(year)
-        if not path:
-            return f"[{year}] descarga INCOMPLETA → skip"
-        agg = load.aggregate(path)
         with psycopg.connect(DB) as conn:
-            load.load_year(conn, year, agg)
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        ubs = len(set(ub for ub, _ in agg["dist"]))
-        return f"[{year}] OK {agg['n']:,} filas → {ubs} ubigeos, PIM {agg['nat'][1] / 1e9:.1f} mil M"
+            return load.process_year(year, conn, force="--force" in flags,
+                                     validar="--no-validate" not in flags)
     except Exception as e:  # noqa: BLE001
-        return f"[{year}] ERROR {repr(e)[:120]}"
+        return f"[{year}] ERROR {repr(e)[:200]}"
 
 
 def main() -> None:
-    args = sys.argv[1:]
-    years = list(range(2012, 2027)) if (not args or args[0] == "all") else [int(a) for a in args]
+    years, flags = load.parse_args(sys.argv[1:])
     with psycopg.connect(DB) as conn:
-        with conn.cursor() as cur:
-            cur.execute(load.SCHEMA)
+        conn.execute(load.SCHEMA)
         conn.commit()
+        load.apply_migrations(conn)
+    load.discover(years[0])  # precarga el mapa del portal una vez (antes de abrir hilos)
     print(f"PARALELO: {WORKERS} a la vez · años {years}", flush=True)
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futs = {ex.submit(do_year, y): y for y in years}
+        futs = {ex.submit(do_year, y, flags): y for y in years}
         for fut in as_completed(futs):
             print(fut.result(), flush=True)
     print("LISTO PARALELO", flush=True)

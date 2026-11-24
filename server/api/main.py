@@ -216,7 +216,11 @@ def root():
                       "/api/cubo?year=&dimension=&nivel=&departamento=",
                       "/api/por-categoria/{año}", "/api/por-tipo-gasto/{año}", "/api/dim-values",
                       "/api/cubo-n?year=&dim=&by=&measure=",
-                      "/api/drill?year=&nivel=&categoria=&programa=&funcion=&departamento=&provincia=&distrito="],
+                      "/api/drill?year=&nivel=&categoria=&programa=&funcion=&departamento=&provincia=&distrito=",
+                      "/api/por-programa-historico?desde=&hasta=&code=",
+                      "/api/programa-territorio-clima?desde=&hasta=&code=",
+                      "/api/clima-tematico?desde=&hasta=", "/api/mitigacion?desde=&hasta=",
+                      "/api/riesgos", "/api/cortes"],
         "dashboard": "https://unimauro.github.io/qhaway-dashboard/",
         "fuente": "MEF — Consulta del Gasto (datos abiertos), cargado en PostgreSQL propio (FIEECS-UNI).",
         "licencia": "CC BY 4.0",
@@ -233,33 +237,66 @@ def health():
         raise HTTPException(503, "base de datos no disponible")
 
 
+# Años <2012: certificado/devengado/girado en la DB vienen del scraper de la Consulta Amigable,
+# que en esos años desalineaba columnas (Compromiso y Avance % en lugar de Certificado/Devengado/
+# Girado). Aunque falte la migración/limpieza, la API devuelve null para esas fases (no basura) y
+# omite las filas de 2005 sin PIA (año desalineado). Ver server/loader/migraciones/001_pre2012.sql.
+ANO_CONFIABLE = 2012
+_FASES_EJEC = ("CASE WHEN ano < 2012 THEN NULL ELSE certificado END AS certificado, "
+               "CASE WHEN ano < 2012 THEN NULL ELSE devengado END AS devengado, "
+               "CASE WHEN ano < 2012 THEN NULL ELSE girado END AS girado")
+_SIN_2005_ROTO = "NOT (ano = 2005 AND COALESCE(pia, 0) = 0)"
+
+
+def _cortes():
+    """{año: 'YYYY-MM-DD'} del último archivo del MEF cargado por año (carga_log).
+    Fecha = Last-Modified del archivo del MEF; si no se conoce, la fecha de carga."""
+    try:
+        rows = q("SELECT DISTINCT ON (ano) ano, "
+                 "to_char(COALESCE(last_modified, cargado_en) AT TIME ZONE 'UTC','YYYY-MM-DD') AS d, "
+                 "COALESCE(last_modified, cargado_en) AS ts "
+                 "FROM carga_log ORDER BY ano, cargado_en DESC")
+    except psycopg.errors.UndefinedTable:
+        return {}, None
+    if not rows:
+        return {}, None
+    ult = max(rows, key=lambda r: r["ts"])
+    return {str(r["ano"]): r["d"] for r in rows}, ult["d"]
+
+
 @app.get("/api/meta", tags=["Sistema"], summary="Años disponibles, último corte y fases")
 @ttl_cache
 def meta():
-    years = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_nacional ORDER BY ano")]
+    years = [r["ano"] for r in q(f"SELECT DISTINCT ano FROM gasto_nacional WHERE {_SIN_2005_ROTO} ORDER BY ano")]
     dyears = [r["ano"] for r in q("SELECT DISTINCT ano FROM gasto_distrito ORDER BY ano DESC")]
+    cortes, last = _cortes()
     return {
         "years": years,
         "latestYear": max(years) if years else None,
         "distritoYears": dyears,
-        "lastUpdate": q("SELECT to_char(now(),'YYYY-MM-DD') d")[0]["d"],
+        # Corte REAL: Last-Modified más reciente de los archivos del MEF cargados (carga_log).
+        # Nunca la fecha de hoy. null si aún no hay registro de cargas.
+        "lastUpdate": last,
+        "cortes": cortes,
+        "anoConfiableDesde": ANO_CONFIABLE,
         "fases": ["pia", "pim", "certificado", "devengado", "girado"],
-        "fuente": "MEF — Consulta del Gasto (CSV datos abiertos), cargado en PostgreSQL propio.",
+        "fuente": "MEF — Presupuesto y Ejecución de Gasto (ZIP/CSV anual de datos abiertos), cargado en PostgreSQL propio.",
     }
 
 
 @app.get("/api/serie-nacional", tags=["Presupuesto"], summary="Serie nacional anual (2004-2026)")
 @ttl_cache
 def serie_nacional():
-    return q("SELECT ano AS year, pia, pim, certificado, devengado, girado FROM gasto_nacional ORDER BY ano")
+    return q(f"SELECT ano AS year, pia, pim, {_FASES_EJEC} FROM gasto_nacional "
+             f"WHERE {_SIN_2005_ROTO} ORDER BY ano")
 
 
 @app.get("/api/por-departamento-historico", tags=["Presupuesto"],
          summary="Serie por departamento de destino (META), 2004-2026")
 @ttl_cache
 def depto_hist():
-    return q("SELECT ano AS year, ubigeo, departamento, pia, pim, certificado, devengado, girado "
-             "FROM gasto_depto_hist ORDER BY ano, ubigeo")
+    return q(f"SELECT ano AS year, ubigeo, departamento, pia, pim, {_FASES_EJEC} "
+             f"FROM gasto_depto_hist WHERE {_SIN_2005_ROTO} ORDER BY ano, ubigeo")
 
 
 @ttl_cache
@@ -299,10 +336,158 @@ def por_nivel(year: int):
 @app.get("/api/flujo-fases/{year}", tags=["Presupuesto"], summary="Fases del gasto (PIA→PIM→…→Girado)")
 @ttl_cache
 def flujo(year: int):
-    r = q("SELECT pia, pim, certificado, devengado, girado FROM gasto_nacional WHERE ano=%s", (year,))
+    r = q(f"SELECT pia, pim, {_FASES_EJEC} FROM gasto_nacional WHERE ano=%s AND {_SIN_2005_ROTO}", (year,))
     if not r:
         raise HTTPException(404, f"sin datos para {year}")
     return r[0]
+
+
+# ---------------------------------------------------------------------------------------------
+# Datasets temáticos (programas presupuestales, clima, mitigación, riesgos/El Niño, cortes).
+# Los carga server/loader/load_tematico.py desde los JSON de public/data. Cada endpoint devuelve
+# EXACTAMENTE la misma forma (y orden) que el archivo estático, para que el front solo cambie el
+# origen. Los filtros opcionales (desde/hasta/code) solo recortan filas.
+# Tras una carga: `docker restart qhaway-api` o POST /api/admin/cache-clear (con CACHE_TOKEN).
+CACHE_TEMATICO = "public, max-age=3600, stale-while-revalidate=86400"
+
+
+def _q_opt(sql: str, params=()):
+    """Como q(), pero si la tabla aún no existe (loader no corrido) devuelve []."""
+    try:
+        return q(sql, params)
+    except psycopg.errors.UndefinedTable:
+        return []
+
+
+def _rango(desde, hasta):
+    for v in (desde, hasta):
+        if v is not None and not (1990 <= v <= 2100):
+            raise HTTPException(422, "año fuera de rango")
+    return (desde if desde is not None else 0), (hasta if hasta is not None else 9999)
+
+
+def _servir(rows, response: Response, nombre: str):
+    if not rows:
+        raise HTTPException(404, f"sin datos de {nombre} (¿corrió load_tematico.py?)")
+    response.headers["Cache-Control"] = CACHE_TEMATICO
+    return rows
+
+
+@ttl_cache
+def _programa_hist(desde: int, hasta: int, code: str):
+    return _q_opt("SELECT ano AS year, code, programa, pia, pim, certificado, devengado, girado "
+                  "FROM gasto_programa WHERE ano BETWEEN %s AND %s AND (%s = '' OR code = %s) "
+                  "ORDER BY orden", (desde, hasta, code, code))
+
+
+@app.get("/api/por-programa-historico", tags=["Presupuesto"],
+         summary="Programas presupuestales por año (= por-programa-historico.json)")
+def por_programa_historico(response: Response, desde: int | None = None, hasta: int | None = None,
+                           code: str = ""):
+    d, h = _rango(desde, hasta)
+    return _servir(_programa_hist(d, h, code.strip()[:8]), response, "programas")
+
+
+@ttl_cache
+def _programa_depto(desde: int, hasta: int, code: str):
+    return _q_opt("SELECT ano AS year, code, programa, ubigeo, departamento, pim, devengado "
+                  "FROM gasto_programa_depto WHERE ano BETWEEN %s AND %s AND (%s = '' OR code = %s) "
+                  "ORDER BY orden", (desde, hasta, code, code))
+
+
+@app.get("/api/programa-territorio-clima", tags=["Territorio"],
+         summary="Programas de clima/riesgo (p. ej. PP 0068) por departamento (= programa-territorio-clima.json)")
+def programa_territorio_clima(response: Response, desde: int | None = None, hasta: int | None = None,
+                              code: str = ""):
+    d, h = _rango(desde, hasta)
+    return _servir(_programa_depto(d, h, code.strip()[:8]), response, "programa-territorio")
+
+
+@ttl_cache
+def _clima(desde: int, hasta: int):
+    return _q_opt("SELECT ano AS year, code, nombre, pia, pim, devengado, girado, medida, atribucion, corte "
+                  "FROM clima_tematico WHERE ano BETWEEN %s AND %s ORDER BY orden", (desde, hasta))
+
+
+@app.get("/api/clima-tematico", tags=["Presupuesto"],
+         summary="Gasto climático oficial: adaptación/mitigación × directa/indirecta (= clima-tematico.json)")
+def clima_tematico(response: Response, desde: int | None = None, hasta: int | None = None):
+    d, h = _rango(desde, hasta)
+    return _servir(_clima(d, h), response, "clima")
+
+
+@ttl_cache
+def _doc(archivo: str):
+    r = _q_opt("SELECT doc::text AS t FROM documento_json WHERE archivo=%s", (archivo,))
+    return r[0]["t"] if r else None
+
+
+def _ano_de(r):
+    if isinstance(r, dict):
+        for k in ("year", "ano", "anio", "año"):
+            v = r.get(k)
+            if isinstance(v, int) or (isinstance(v, str) and v.isdigit()):
+                return int(v)
+    return None
+
+
+@app.get("/api/mitigacion", tags=["Presupuesto"],
+         summary="Serie de mitigación (= mitigacion-2021-2027.json); ?desde=&hasta= recorta los registros con año")
+def mitigacion(response: Response, desde: int | None = None, hasta: int | None = None):
+    import json as _json
+    txt = _doc("mitigacion")
+    if not txt:
+        raise HTTPException(404, "sin datos de mitigación (¿corrió load_tematico.py?)")
+    if desde is None and hasta is None:
+        return Response(content=txt, media_type="application/json",
+                        headers={"Cache-Control": CACHE_TEMATICO})
+    d, h = _rango(desde, hasta)
+    doc = _json.loads(txt)
+
+    def recorta(lst):
+        return [r for r in lst if _ano_de(r) is None or d <= _ano_de(r) <= h]
+    doc = recorta(doc) if isinstance(doc, list) else {
+        k: (recorta(v) if isinstance(v, list) else v) for k, v in doc.items()}
+    response.headers["Cache-Control"] = CACHE_TEMATICO
+    return doc
+
+
+@app.get("/api/riesgos", tags=["Territorio"],
+         summary="Riesgos por región y estado de El Niño (= riesgos.json)")
+def riesgos():
+    txt = _doc("riesgos")
+    if not txt:
+        raise HTTPException(404, "sin datos de riesgos (¿corrió load_tematico.py?)")
+    return Response(content=txt, media_type="application/json", headers={"Cache-Control": CACHE_TEMATICO})
+
+
+@ttl_cache
+def _cortes_dataset():
+    rows = _q_opt("SELECT dataset, anios, to_char(fecha_corte,'YYYY-MM-DD') AS fecha_corte, fuente, generado "
+                  "FROM corte_dataset ORDER BY orden, dataset")
+    return {r["dataset"]: {"anios": r["anios"], "fecha_corte": r["fecha_corte"], "fuente": r["fuente"],
+                           "generado": r["generado"]} for r in rows}
+
+
+@app.get("/api/cortes", tags=["Sistema"], summary="Fecha de corte por dataset (= cortes.json)")
+def cortes(response: Response):
+    return _servir(_cortes_dataset(), response, "cortes")
+
+
+# Limpieza del caché en memoria tras una carga (alternativa a `docker restart qhaway-api`).
+# Token: CACHE_TOKEN (o QHAWAY_API_KEY si no hay). Sin ninguno, el endpoint no existe (404).
+CACHE_TOKEN = os.environ.get("CACHE_TOKEN", "").strip() or API_KEY
+
+
+@app.post("/api/admin/cache-clear", include_in_schema=False)
+def cache_clear(request: Request):
+    import hmac
+    sent = request.headers.get("x-cache-token") or request.headers.get("x-api-key") or ""
+    if not CACHE_TOKEN or not hmac.compare_digest(sent, CACHE_TOKEN):
+        raise HTTPException(404, "Not Found")
+    n = len(_cache)
+    _cache.clear()
+    return {"ok": True, "entradas_borradas": n}
 
 
 @app.get("/api/explorador-funcion-meta/{year}", tags=["Territorio"],

@@ -49,6 +49,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       CONTACTOS_TOKEN: ${CONTACTOS_TOKEN:-}
+      # Token para POST /api/admin/cache-clear (vaciar caché tras una carga). Vacío = deshabilitado.
+      CACHE_TOKEN: ${CACHE_TOKEN:-}
       RATE_MAX: "120"
       RATE_WINDOW: "60"
     ports:
