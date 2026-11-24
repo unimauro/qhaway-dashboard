@@ -37,9 +37,13 @@ vulnerabilidad y atención de emergencias por desastres, MEF)
 
 *(MEF, Consulta Amigable, corte 23-nov-2026; departamento de destino del gasto — el gasto nacional sin asignar figura en Lima)*
 
-**Y para 2027:** el presupuesto inicial para desastres (PP 0068) **baja 8.2%**, a S/ 2,008 M, en plena
-alerta. *(Proyecto de Ley de Presupuesto 2027, dictamen de la Comisión Bicameral, aprobado por el Pleno
-el 21-nov-2026; verificar en la ley publicada en El Peruano.)*
+**Y para 2027:** el MEF anuncia **S/ 2,489 M para El Niño**, repartidos en varias entidades: ANIN 1,047 · INDECI 413 ·
+Vivienda 273 · Transportes 91. Además hay partidas excepcionales: **FONDES S/ 354 M** (art. 63), ANA S/ 18 M para
+descolmatación (art. 62) y una **Reserva de Contingencia que se duplica con creces** (S/ 9,601 M frente a 4,061 M), que es la vía
+habitual para financiar emergencias. Pero el programa permanente de prevención (PP 0068) **baja 8.2%**, a S/ 2,008 M,
+y solo el 19% del paquete para El Niño llega a regiones y municipios. Se financia más la respuesta que la prevención.
+*(Dictamen de la Comisión Bicameral y exposición de motivos del PL 2027; aprobado por el Pleno el 21-nov-2026. El
+desglose de S/ 2,489 M viene de prensa (Infobae, La República). Verificar en la ley publicada en El Peruano.)*
 
 **Prepárate (INDECI / CENEPRED):**
 1. Arma tu plan familiar: rutas de evacuación, punto de reunión y teléfonos.
