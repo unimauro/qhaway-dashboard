@@ -1,9 +1,22 @@
 name: Deploy to GitHub Pages
 
+# Espejo estático en GitHub Pages (base /qhaway-dashboard/). La producción real es
+# https://qhaway.org (VPS) y se despliega con ./deploy-vps.sh.
+#
+# Disparadores:
+#  - push a main;
+#  - a mano (workflow_dispatch);
+#  - al terminar con éxito "Actualizar datos del MEF (mensual)": su push se hace con
+#    GITHUB_TOKEN y GitHub NO dispara otros workflows por pushes de ese token, así que
+#    se encadena explícitamente con workflow_run.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Actualizar datos del MEF (mensual)']
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -16,22 +29,33 @@ concurrency:
 
 jobs:
   build:
+    # En workflow_run solo si la actualización de datos terminó bien.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # En workflow_run, GITHUB_SHA es la punta de la rama por defecto (incluye el
+      # commit del bot), así que el checkout por defecto ya trae los datos nuevos.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Build
+        run: npx vite build
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
