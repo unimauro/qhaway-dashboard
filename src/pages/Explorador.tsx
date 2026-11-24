@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
-import { getGeoJSON, loadJSON } from '../lib/data'
+import { getGeoJSON, loadJSON, getMeta, aniosDistritales, anioDistrital } from '../lib/data'
 import type { PorDistrito } from '../lib/types'
 import { useAsync } from '../lib/useAsync'
 import { solesCompact, soles, pct, num, ejecucion } from '../lib/format'
@@ -75,8 +75,10 @@ const ATRIB_OPTS: { value: Atribucion; label: string }[] = [
   { value: 'ejecutora', label: 'Por ejecutora' },
 ]
 
+// Año del único archivo "por ejecutora" que existe (explorador-*-depto-2025.json): es el
+// respaldo cuando el año pedido no tiene cruce por destino (META). Los años del selector
+// y el año inicial salen de meta (años con detalle distrital).
 const FALLBACK_YEAR = 2025
-const YEARS = [2026, 2025, 2024, 2023, 2022, 2021]
 
 /**
  * Resultado de una carga año-aware: filas + de qué año salieron realmente
@@ -178,7 +180,14 @@ function ExploradorBody({ geo }: { geo: ReturnType<typeof useAsync<unknown>> }) 
   const [cat, setCat] = useState<string>(TODOS)
   const [fase, setFase] = useState<Fase>('pim')
   const [atribucion, setAtribucion] = useState<Atribucion>('meta')
-  const [year, setYear] = useState<number>(FALLBACK_YEAR)
+  const meta = useAsync(getMeta, [])
+  const YEARS = useMemo(
+    () => (meta.data ? [...aniosDistritales(meta.data)].sort((a, b) => b - a) : [FALLBACK_YEAR]),
+    [meta.data],
+  )
+  // Año elegido por el usuario; mientras no elija, el año distrital por defecto de meta.
+  const [yearSel, setYear] = useState<number | null>(null)
+  const year = yearSel ?? (meta.data ? anioDistrital(meta.data) : FALLBACK_YEAR)
   const [orderDesc, setOrderDesc] = useState<boolean>(true)
 
   // La atribución efectiva: "Por fuente" solo existe por ejecutora (-2025) o META por año.
@@ -500,7 +509,7 @@ function RankingCard({
       .filter((d) => d[fase === 'pim' ? 'pim' : 'dev'] > 0)
       .sort((a, b) => b[fase === 'pim' ? 'pim' : 'dev'] - a[fase === 'pim' ? 'pim' : 'dev'])
       .slice(0, 15)
-  }, [filas, dimension, departamento, nivel, cat, fase, porDepartamentos])
+  }, [filas, departamento, nivel, cat, fase, porDepartamentos])
 
   const subtitle = porDepartamentos
     ? `Top 15 por ${FASE_LABEL[fase]} · resalta dónde está cada departamento`

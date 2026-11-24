@@ -3,6 +3,7 @@ import { solesCompact, soles, pct, ejecucion, num } from '../lib/format'
 import { Card, CardHeader, HelpTip, KPI, Pill, Select, Loading, ErrorBox } from './ui'
 import { Chart } from './Chart'
 import { downloadCSV } from '../lib/download'
+import { loadJSON } from '../lib/data'
 
 /* ───────────────────────── Esquema del clasificador temático MEF ───────────────────────── */
 
@@ -79,20 +80,16 @@ export default function ClimaOficial() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [year, setYear] = useState<number | null>(null)
-  const [dimension, setDimension] = useState<Dimension>('funcion')
+  const [yearSel, setYear] = useState<number | null>(null)
+  const [dimensionSel, setDimension] = useState<Dimension>('funcion')
   const [filtroAtrib, setFiltroAtrib] = useState<FiltroAtrib>('todas')
   const [filtroMedida, setFiltroMedida] = useState<FiltroMedida>('todas')
 
-  // Carga directa del JSON del clasificador temático (tolerante a datos parciales).
+  // Clasificador temático: loadJSON usa /api/clima-tematico y cae al JSON estático si la
+  // API no responde (tolerante a datos parciales).
   useEffect(() => {
     let alive = true
-    setLoading(true)
-    fetch(`${import.meta.env.BASE_URL}data/clima-tematico.json`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
+    loadJSON<unknown>('clima-tematico.json')
       .then((data: unknown) => {
         if (!alive) return
         const arr = Array.isArray(data) ? (data as FilaClima[]) : []
@@ -113,10 +110,9 @@ export default function ClimaOficial() {
     return [...new Set(rows.map((r) => r.year))].sort((a, b) => b - a)
   }, [rows])
 
-  // Selecciona el año más reciente apenas haya datos.
-  useEffect(() => {
-    if (year == null && years.length) setYear(years[0])
-  }, [years, year])
+  // Año efectivo: el elegido si existe en los datos; si no, el más reciente (derivado en
+  // render en vez de efecto + setState, que provocaba un render en cascada).
+  const year = yearSel != null && years.includes(yearSel) ? yearSel : (years[0] ?? null)
 
   // Filas del año elegido tras aplicar filtros de atribución y medida.
   const filtradas = useMemo(() => {
@@ -138,13 +134,11 @@ export default function ClimaOficial() {
     return s
   }, [filtradas])
 
-  // Si la dimensión elegida no tiene datos este año, salta a la primera que sí los tenga.
-  useEffect(() => {
-    if (!filtradas.length) return
-    if (cortesDisponibles.has(dimension)) return
-    const fallback = (['funcion', 'departamento', 'categoria'] as Dimension[]).find((d) => cortesDisponibles.has(d))
-    if (fallback) setDimension(fallback)
-  }, [cortesDisponibles, dimension, filtradas.length])
+  // Si la dimensión elegida no tiene datos este año, se usa la primera que sí los tenga
+  // (derivado; la elección del usuario se conserva para cuando vuelva a haber datos).
+  const dimension: Dimension = !filtradas.length || cortesDisponibles.has(dimensionSel)
+    ? dimensionSel
+    : ((['funcion', 'departamento', 'categoria'] as Dimension[]).find((d) => cortesDisponibles.has(d)) ?? dimensionSel)
 
   // Filas del corte (dimensión) activo.
   const filasDim = useMemo(() => filtradas.filter((r) => r.corte === dimension), [filtradas, dimension])

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { loadJSON, getGeoJSON } from '../lib/data'
 import type { RiesgosData } from '../lib/types'
 import { useAsync } from '../lib/useAsync'
@@ -16,12 +17,14 @@ const NIVEL_COLOR: Record<Nivel, string> = {
   media: '#f59e0b',
   baja: '#22c55e',
 }
+// Parámetros del tooltip de ECharts (trigger 'axis') que usan estas vistas.
+type TipEje = { name: string; value: number }[]
 const SIN_DATO = '#94a3b8'
 const NIVEL_VALOR: Record<Nivel, number> = { alta: 3, media: 2, baja: 1 }
 const NIVEL_LABEL: Record<Nivel, string> = { alta: 'Alta', media: 'Media', baja: 'Baja' }
 
 export default function Riesgos() {
-  const { data, loading, error } = useAsync<[RiesgosData, any]>(
+  const { data, loading, error } = useAsync<[RiesgosData, GeoJSON.FeatureCollection]>(
     () => Promise.all([loadJSON<RiesgosData>('riesgos.json'), getGeoJSON()]),
     [],
   )
@@ -101,7 +104,7 @@ export default function Riesgos() {
   const heatmapOption = {
     grid: { left: 110, right: 16, top: 8, bottom: 90 },
     tooltip: {
-      formatter: (p: any) => {
+      formatter: (p: { value: [number, number, number] }) => {
         const t = tiposMatriz[p.value[0]]
         const r = regionesMatriz[p.value[1]]
         const lbl = (['', 'baja', 'media', 'alta'] as const)[p.value[2]] ?? '—'
@@ -149,7 +152,7 @@ export default function Riesgos() {
 
   const pobExpOption = {
     grid: { left: 90, right: 24, top: 8, bottom: 28 },
-    tooltip: { trigger: 'axis', formatter: (p: any) => `<b>${p[0].name}</b><br>Población: ${num(p[0].value)}` },
+    tooltip: { trigger: 'axis', formatter: (p: TipEje) => `<b>${p[0].name}</b><br>Población: ${num(p[0].value)}` },
     xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v / 1e6).toFixed(1)} M` } },
     yAxis: { type: 'category', data: expuestas.map((r) => r.name).reverse(), axisLabel: { fontSize: 10 } },
     series: [{
@@ -169,7 +172,7 @@ export default function Riesgos() {
 
   const glaciarOption = {
     grid: { left: 56, right: 24, top: 12, bottom: 28 },
-    tooltip: { trigger: 'axis', formatter: (p: any) => `Año ${p[0].name}<br>${num(p[0].value)} km²` },
+    tooltip: { trigger: 'axis', formatter: (p: TipEje) => `Año ${p[0].name}<br>${num(p[0].value)} km²` },
     xAxis: { type: 'category', data: glaciares.labels.map((l) => String(l)), boundaryGap: false },
     yAxis: { type: 'value', name: 'km²', axisLabel: { formatter: (v: number) => num(v) } },
     series: [{
@@ -180,7 +183,7 @@ export default function Riesgos() {
 
   const defoOption = {
     grid: { left: 100, right: 24, top: 8, bottom: 28 },
-    tooltip: { trigger: 'axis', formatter: (p: any) => `<b>${p[0].name}</b><br>${num(p[0].value)} ha` },
+    tooltip: { trigger: 'axis', formatter: (p: TipEje) => `<b>${p[0].name}</b><br>${num(p[0].value)} ha` },
     xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v / 1000).toFixed(0)} k` } },
     yAxis: { type: 'category', data: defo.map((d) => d.region).reverse(), axisLabel: { fontSize: 10 } },
     series: [{
@@ -191,7 +194,7 @@ export default function Riesgos() {
 
   const damnOption = {
     grid: { left: 64, right: 24, top: 12, bottom: 28 },
-    tooltip: { trigger: 'axis', formatter: (p: any) => `Año ${p[0].name}<br>${num(p[0].value)} damnificados` },
+    tooltip: { trigger: 'axis', formatter: (p: TipEje) => `Año ${p[0].name}<br>${num(p[0].value)} damnificados` },
     xAxis: { type: 'category', data: damn.map((d) => String(d.anio)) },
     yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `${(v / 1000).toFixed(0)} k` } },
     series: [{
@@ -208,6 +211,18 @@ export default function Riesgos() {
         regiones y el contexto histórico (sismos, El Niño, retroceso glaciar, deforestación y
         damnificados). Fuentes oficiales: IGP, SENAMHI, ENFEN, CENEPRED, INDECI, INAIGEM y MINAM.
       </SectionIntro>
+
+      {/* Banner: evento El Niño en curso → vista dedicada */}
+      <Link
+        to="/el-nino"
+        className="flex flex-col gap-1 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 transition hover:border-amber-500 dark:border-amber-800 dark:bg-amber-900/30 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <span className="text-sm text-amber-800 dark:text-amber-200">
+          🌊 <b>El Niño costero 2026-27 en curso.</b> ¿Coincide el presupuesto de gestión del riesgo
+          (PP 0068) con las regiones más expuestas?
+        </span>
+        <span className="shrink-0 text-sm font-semibold text-amber-700 dark:text-amber-300">Ver riesgo × presupuesto →</span>
+      </Link>
 
       {/* Controles + KPIs */}
       <Card>
@@ -385,7 +400,7 @@ export default function Riesgos() {
                 <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-amber-500" />
                 <div className="flex items-center gap-2">
                   <span className="font-semibold tabular-nums text-ink-800 dark:text-ink-100">{e.anio}</span>
-                  <Pill tone={/extraordinario/i.test(e.intensidad) ? 'warn' : 'neutral'}>{e.intensidad}</Pill>
+                  <Pill tone={/extraordinari|en curso/i.test(e.intensidad) ? 'warn' : 'neutral'}>{e.intensidad}</Pill>
                 </div>
               </li>
             ))}

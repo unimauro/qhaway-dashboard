@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
-import { loadJSON, getGeoJSON } from '../lib/data'
+import { loadJSON, getGeoJSON, getMeta, anioEnCurso, rangoAnios, getCorte } from '../lib/data'
+import { DEVENGADO_DESDE, devengadoONull } from '../lib/reglas'
 import { useAsync } from '../lib/useAsync'
-import { soles, solesCompact, pct, num, ejecucion } from '../lib/format'
+import { soles, solesCompact, pct, num, ejecucion, fecha } from '../lib/format'
 import {
   Card, CardHeader, HelpTip, KPI, Pill, Select, Loading, ErrorBox, SectionIntro,
 } from '../components/ui'
@@ -35,12 +36,8 @@ const FASE_OPTS: { value: Fase; label: string }[] = [
 // Ubigeos que NO son departamentos territoriales (se excluyen del análisis regional).
 const UBIGEOS_NO_TERRITORIO = new Set(['00', '98'])
 
-// Año desde el cual el devengado por departamento es confiable en la fuente.
-// 2004-2011 traen valores espurios de devengado/girado (atribución territorial incompleta).
-const DEVENGADO_DESDE = 2012
-
-// Año de corte parcial (ejercicio en curso).
-const ANIO_PARCIAL = 2026
+// DEVENGADO_DESDE (src/lib/reglas.ts): 2004-2011 traen devengado/girado espurios.
+// El año parcial (ejercicio en curso) se deriva de meta (anioEnCurso).
 
 /** Color por % ejecución (fracción 0..1): <0.5 rojo, 0.5–0.8 ámbar, >0.8 verde */
 function colorEjec(frac: number): string {
@@ -62,20 +59,31 @@ export default function Historico() {
     [],
   )
   const geo = useAsync<unknown>(getGeoJSON, [])
+  const meta = useAsync(getMeta, [])
+  // Corte del ejercicio en curso según cortes.json (si el dato vino del scraper).
+  const anioParcial = meta.data ? anioEnCurso(meta.data) : undefined
+  const corte = useAsync(
+    () => (anioParcial ? getCorte('por-departamento-historico.json', anioParcial) : Promise.resolve(undefined)),
+    [anioParcial],
+  )
 
-  if (hist.loading) return <Loading label="Cargando 22 años de presupuesto regional…" />
+  if (hist.loading) return <Loading label="Cargando histórico de presupuesto regional…" />
   if (hist.error) return <ErrorBox error={hist.error} />
   if (!hist.data) return <Loading />
 
-  return <HistoricoBody hist={hist.data} geo={geo} />
+  return <HistoricoBody hist={hist.data} geo={geo} anioParcial={anioParcial} corteParcial={corte.data} />
 }
 
 function HistoricoBody({
   hist,
   geo,
+  anioParcial,
+  corteParcial,
 }: {
   hist: DeptoHist[]
   geo: ReturnType<typeof useAsync<unknown>>
+  anioParcial?: number
+  corteParcial?: string
 }) {
   // Solo departamentos territoriales reales.
   const rows = useMemo(
@@ -110,8 +118,8 @@ function HistoricoBody({
   )
 
   const yearOpts = useMemo(
-    () => years.map((y) => ({ value: y, label: y === ANIO_PARCIAL ? `${y} (parcial)` : String(y) })),
-    [years],
+    () => years.map((y) => ({ value: y, label: y === anioParcial ? `${y} (parcial)` : String(y) })),
+    [years, anioParcial],
   )
   const deptoOpts = useMemo(
     () => departamentos.map((d) => ({ value: d.ubigeo, label: d.nombre })),
@@ -119,6 +127,7 @@ function HistoricoBody({
   )
 
   const devengadoConfiable = year >= DEVENGADO_DESDE
+  const rango = rangoAnios(years)
   const faseEfectiva: Fase = fase === 'devengado' && !devengadoConfiable ? 'pim' : fase
 
   // KPIs nacionales del año (suma de departamentos).
@@ -128,7 +137,7 @@ function HistoricoBody({
   const nDeptos = delAnio.length
 
   const descargarSerie = () =>
-    downloadCSV('qhaway-presupuesto-regional-2004-2026', [
+    downloadCSV(`qhaway-presupuesto-regional-${rango.replace('–', '-')}`, [
       { key: 'year', label: 'Anio' },
       { key: 'ubigeo', label: 'UBIGEO_depto' },
       { key: 'departamento', label: 'Departamento' },
@@ -141,9 +150,9 @@ function HistoricoBody({
 
   return (
     <div className="space-y-5">
-      <SectionIntro title="Evolución Regional 2004-2026">
+      <SectionIntro title={`Evolución Regional ${rango}`}>
         El presupuesto público del Estado peruano <strong>por región / departamento</strong> para
-        cada uno de los 22 ejercicios fiscales disponibles, atribuido por{' '}
+        cada uno de los {years.length} ejercicios fiscales disponibles, atribuido por{' '}
         <strong>destino territorial</strong> (a dónde se dirige el gasto, no dónde está la entidad
         rectora). Elige un año para ver el mapa, el ranking y los KPIs de ese ejercicio; o elige un
         departamento para ver cómo creció su presupuesto en dos décadas. Cifras en{' '}
@@ -169,10 +178,12 @@ function HistoricoBody({
           {fase === 'devengado' && !devengadoConfiable && (
             <Pill tone="warn">sin devengado confiable en {year} — se muestra PIM</Pill>
           )}
-          {year === ANIO_PARCIAL && <Pill tone="warn">ejercicio en curso</Pill>}
+          {year === anioParcial && (
+            <Pill tone="warn">ejercicio en curso{corteParcial ? ` · corte ${fecha(corteParcial)}` : ''}</Pill>
+          )}
         </div>
         {/* Salto rápido de año */}
-        <YearStrip years={years} year={year} onPick={(y) => { setYear(y); setMapSel(undefined) }} />
+        <YearStrip years={years} year={year} anioParcial={anioParcial} onPick={(y) => { setYear(y); setMapSel(undefined) }} />
       </div>
 
       {/* KPIs del año */}
@@ -241,7 +252,7 @@ function HistoricoBody({
 
 /* ───────────────────────── Tira de años (salto rápido) ───────────────────────── */
 
-function YearStrip({ years, year, onPick }: { years: number[]; year: number; onPick: (y: number) => void }) {
+function YearStrip({ years, year, anioParcial, onPick }: { years: number[]; year: number; anioParcial?: number; onPick: (y: number) => void }) {
   // Mostrar ascendente para una línea de tiempo natural izquierda→derecha.
   const asc = [...years].sort((a, b) => a - b)
   return (
@@ -259,7 +270,7 @@ function YearStrip({ years, year, onPick }: { years: number[]; year: number; onP
                 : 'border-ink-200 dark:border-ink-800 text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800'
             }`}
           >
-            {y === ANIO_PARCIAL ? `${y}*` : y}
+            {y === anioParcial ? `${y}*` : y}
           </button>
         )
       })}
@@ -562,11 +573,11 @@ function EvolucionDepto({
   return (
     <Card>
       <CardHeader
-        title="Evolución de un departamento (2004-2026)"
+        title={`Evolución de un departamento (${rangoAnios(serie.map((r) => r.year))})`}
         subtitle="Serie temporal del PIM y el devengado de la región elegida"
         help={
           <HelpTip>
-            Cómo creció el presupuesto de una región en 22 años. Las barras son el{' '}
+            Cómo creció el presupuesto de una región en {serie.length} años. Las barras son el{' '}
             <strong>PIM</strong> anual y la línea el <strong>devengado</strong> (gasto reconocido).
             Cifras en <strong>soles corrientes</strong>: el crecimiento incluye inflación, no es
             todo aumento real. El devengado regional solo es confiable desde {DEVENGADO_DESDE}; los
@@ -590,7 +601,7 @@ function EvolucionChart({ serie, nombre }: { serie: DeptoHist[]; nombre: string 
   const years = serie.map((r) => r.year)
   const pim = serie.map((r) => r.pim || 0)
   // Devengado solo confiable desde DEVENGADO_DESDE; antes lo dejamos vacío para no engañar.
-  const dev = serie.map((r) => (r.year >= DEVENGADO_DESDE ? (r.devengado || 0) : null))
+  const dev = serie.map((r) => devengadoONull(r.year, r.devengado))
 
   const option: EChartsOption = {
     tooltip: {

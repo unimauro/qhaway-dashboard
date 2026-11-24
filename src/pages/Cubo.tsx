@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   getMeta, getPorDistrito, getGeoJSON, loadJSON,
   getCuboN, getDimValues, type CuboPivot, type CuboDim, type CuboMeasure, type DimValues,
@@ -672,6 +672,39 @@ function flecha(active: boolean, asc: boolean): string {
   return asc ? ' ▲' : ' ▼'
 }
 
+// Encabezado ordenable (a nivel de módulo: definirlo dentro del render recrea el
+// componente en cada render y React desmonta/monta la celda).
+function Th({
+  k,
+  children,
+  align = 'left',
+  sortKey,
+  sortAsc,
+  onSort,
+}: {
+  k: SortKey
+  children: React.ReactNode
+  align?: 'left' | 'right'
+  sortKey: SortKey
+  sortAsc: boolean
+  onSort: (k: SortKey) => void
+}) {
+  const active = sortKey === k
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (sortAsc ? 'ascending' : 'descending') : 'none'}
+      className={`py-2 pr-2 cursor-pointer select-none whitespace-nowrap hover:text-slate-700 dark:hover:text-slate-200 ${
+        align === 'right' ? 'text-right' : 'text-left'
+      } ${active ? 'text-slate-700 dark:text-slate-200' : ''}`}
+      onClick={() => onSort(k)}
+    >
+      {children}
+      {flecha(active, sortAsc)}
+    </th>
+  )
+}
+
 function TablaCubo({
   filas,
   sortKey,
@@ -683,29 +716,19 @@ function TablaCubo({
   sortAsc: boolean
   onSort: (k: SortKey) => void
 }) {
-  const Th = ({ k, children, align = 'left' }: { k: SortKey; children: React.ReactNode; align?: 'left' | 'right' }) => (
-    <th
-      className={`py-2 pr-2 cursor-pointer select-none whitespace-nowrap hover:text-slate-700 dark:hover:text-slate-200 ${
-        align === 'right' ? 'text-right' : 'text-left'
-      } ${sortKey === k ? 'text-slate-700 dark:text-slate-200' : ''}`}
-      onClick={() => onSort(k)}
-    >
-      {children}
-      {flecha(sortKey === k, sortAsc)}
-    </th>
-  )
+  const sortProps = { sortKey, sortAsc, onSort }
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-xs text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
-            <Th k="nombre">Distrito</Th>
-            <Th k="depto">Departamento</Th>
-            <Th k="pobreza" align="right">Pobreza</Th>
-            <Th k="idh" align="right">IDH</Th>
-            <Th k="piso">Piso</Th>
-            <Th k="pimPerCapita" align="right">PIM/hab</Th>
-            <Th k="riesgo" align="right">Riesgo clim.</Th>
+            <Th {...sortProps} k="nombre">Distrito</Th>
+            <Th {...sortProps} k="depto">Departamento</Th>
+            <Th {...sortProps} k="pobreza" align="right">Pobreza</Th>
+            <Th {...sortProps} k="idh" align="right">IDH</Th>
+            <Th {...sortProps} k="piso">Piso</Th>
+            <Th {...sortProps} k="pimPerCapita" align="right">PIM/hab</Th>
+            <Th {...sortProps} k="riesgo" align="right">Riesgo clim.</Th>
           </tr>
         </thead>
         <tbody>
@@ -807,15 +830,13 @@ function CuboNView() {
     return gy && gy.length ? [...gy].sort((a, b) => b - a) : []
   }, [dimQ.data])
 
-  const [year, setYear] = useState<number | null>(null)
+  // Año elegido por el usuario; si no eligió (o su año ya no es granular), se usa el
+  // más reciente de granularYears. Derivado en render, sin efecto + setState.
+  const [yearSel, setYear] = useState<number | null>(null)
+  const year = yearSel != null && granularYears.includes(yearSel) ? yearSel : (granularYears[0] ?? null)
   const [dim, setDim] = useState<CuboDim>('funcion')
   const [by, setBy] = useState<CuboDim>('nivel')
   const [measure, setMeasure] = useState<CuboMeasure>('pim')
-
-  // El año por defecto sale de granularYears (el más reciente) cuando llega la lista.
-  useEffect(() => {
-    if (year == null && granularYears.length) setYear(granularYears[0])
-  }, [granularYears, year])
 
   // Impedir dim == by: al elegir la misma dimensión en un eje, se autoajusta el otro.
   function changeDim(v: CuboDim) {

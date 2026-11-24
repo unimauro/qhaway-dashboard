@@ -32,3 +32,12 @@ export function ejecucion(devengado: number, pim: number): number {
   if (!pim) return 0
   return devengado / pim
 }
+
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic']
+/** '2026-11-23' → '23 nov 2026' (si no es ISO, devuelve el texto tal cual). */
+export function fecha(iso: string | undefined | null): string {
+  if (!iso) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!m) return iso
+  return `${Number(m[3])} ${MESES_CORTOS[Number(m[2]) - 1] ?? m[2]} ${m[1]}`
+}

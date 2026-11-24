@@ -1,4 +1,4 @@
-import { getMeta } from '../lib/data'
+import { getMeta, API_DOCS_URL, API_REDOC_URL } from '../lib/data'
 import { useAsync } from '../lib/useAsync'
 import Buzon from '../components/Buzon'
 import {
@@ -115,7 +115,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: '¿Por qué el presupuesto histórico llega solo hasta departamento y no a distrito?',
-    a: 'Es un vacío de la propia fuente, no del observatorio. El SIAF del MEF solo georreferencia el gasto a su DESTINO a nivel de departamento (campo DEPARTAMENTO_META); no existe provincia ni distrito de destino. El único nivel distrital disponible es el de la UNIDAD EJECUTORA (dónde está la entidad que administra el gasto), que para el grueso del Gobierno Nacional figura en Lima, no en el territorio donde realmente se invierte. En otras palabras: el Estado peruano no registra públicamente en qué distrito aterriza la mayor parte de su presupuesto. Por eso QHAWAY muestra el detalle por destino a nivel departamental para todos los años (2004-2026), el detalle distrital por ejecutora donde está disponible (2025), y visibiliza explícitamente este vacío de transparencia.',
+    a: 'Es un vacío de la propia fuente, no del observatorio. El SIAF del MEF solo georreferencia el gasto a su DESTINO a nivel de departamento (campo DEPARTAMENTO_META); no existe provincia ni distrito de destino. El único nivel distrital disponible es el de la UNIDAD EJECUTORA (dónde está la entidad que administra el gasto), que para el grueso del Gobierno Nacional figura en Lima, no en el territorio donde realmente se invierte. En otras palabras: el Estado peruano no registra públicamente en qué distrito aterriza la mayor parte de su presupuesto. Por eso QHAWAY muestra el detalle por destino a nivel departamental para todos los años de la serie, el detalle distrital por ejecutora para los años con detalle cargado, y visibiliza explícitamente este vacío de transparencia.',
   },
   {
     q: '¿Qué significa cada fase del gasto?',
@@ -159,7 +159,7 @@ const FAQ: FaqItem[] = [
   },
   {
     q: '¿QHAWAY tiene una API pública para reutilizar los datos?',
-    a: 'Sí. Toda la información se expone como datos abiertos a través de una API REST documentada (OpenAPI/Swagger). Puedes explorarla y probarla en vivo en qhaway.tunky.net/docs (Swagger) o qhaway.tunky.net/redoc. Es de solo lectura, con un límite de tasa razonable por IP; si necesitas volúmenes grandes, descarga los JSON o escríbenos por el buzón.',
+    a: `Sí. Toda la información se expone como datos abiertos a través de una API REST documentada (OpenAPI/Swagger). Puedes explorarla y probarla en vivo en ${API_DOCS_URL.replace(/^https?:\/\//, '')} (Swagger) o ${API_REDOC_URL.replace(/^https?:\/\//, '')}. Es de solo lectura, con un límite de tasa razonable por IP; si necesitas volúmenes grandes, descarga los JSON o escríbenos por el buzón.`,
   },
   {
     q: '¿Cuál es la dirección oficial del observatorio?',

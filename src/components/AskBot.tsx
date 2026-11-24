@@ -31,6 +31,14 @@ import { soles, solesCompact, pct, ejecucion } from '../lib/format'
 
 const NINACHA_API = `${API_BASE}/api/ninacha`
 const LS_KEY = 'qhaway-gemini-key'
+
+function leerKeyGuardada(): string {
+  try {
+    return localStorage.getItem(LS_KEY) || ''
+  } catch {
+    return '' // localStorage no disponible — modo guiado
+  }
+}
 const MAX_HISTORIAL = 40
 
 type Rol = 'user' | 'bot'
@@ -71,7 +79,7 @@ const GLOSARIO: Record<string, string> = {
   piso: 'Piso altitudinal: franja de altitud según Javier Pulgar Vidal (Chala, Yunga, Quechua, Suni, Puna, Janca + Selva Alta/Baja). Clasificamos por la altitud de la capital del distrito (aproximación).',
   'piso altitudinal':
     'Piso altitudinal: franja de altitud según Javier Pulgar Vidal (Chala, Yunga, Quechua, Suni, Puna, Janca + Selva Alta/Baja).',
-  ipt: 'IPT = Índice de Prosperidad Territorial: indicador compuesto del observatorio (parcial/aproximado) que combina indicadores socioeconómicos distritales. Revisa su construcción en Metodología.',
+  ipt: 'El antiguo IPT (Índice de Prosperidad Territorial) fue retirado: era un índice compuesto poco transparente. En su lugar, el módulo «Desarrollo Humano y Estado» muestra indicadores oficiales citables por distrito (IDH del PNUD, pobreza del INEI, presencia del Estado).',
   idh: 'IDH = Índice de Desarrollo Humano (PNUD): combina salud, educación e ingresos. Escala 0–100 en nuestros datos.',
 }
 
@@ -79,7 +87,7 @@ const LINKS = {
   presupuesto: { to: '/presupuesto', label: 'Ver Presupuesto' },
   pisos: { to: '/pisos', label: 'Ver Pisos altitudinales' },
   riesgos: { to: '/riesgos', label: 'Ver Riesgos' },
-  prosperidad: { to: '/prosperidad', label: 'Ver Prosperidad' },
+  prosperidad: { to: '/prosperidad', label: 'Ver Desarrollo Humano' },
   metodologia: { to: '/metodologia', label: 'Ver Metodología' },
 }
 
@@ -88,7 +96,7 @@ const CHIPS = [
   '¿Qué es PIM y devengado?',
   '¿Cuánto recibió mi región?',
   '¿Cuánto presupuesto va a la puna?',
-  '¿Cómo se calcula el IPT?',
+  '¿Qué es el IDH?',
 ]
 
 interface Datos {
@@ -110,8 +118,9 @@ export default function AskBot() {
   const [abierto, setAbierto] = useState(false)
   const [ajustes, setAjustes] = useState(false)
   const [input, setInput] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [keyDraft, setKeyDraft] = useState('')
+  // API key persistida: se lee en el inicializador (sin efecto + setState).
+  const [apiKey, setApiKey] = useState(leerKeyGuardada)
+  const [keyDraft, setKeyDraft] = useState(apiKey)
   const [pensando, setPensando] = useState(false)
   const [datos, setDatos] = useState<Datos | null>(null)
   const [mensajes, setMensajes] = useState<Mensaje[]>([
@@ -125,17 +134,6 @@ export default function AskBot() {
   ])
 
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  // Cargar API key persistida.
-  useEffect(() => {
-    try {
-      const k = localStorage.getItem(LS_KEY) || ''
-      setApiKey(k)
-      setKeyDraft(k)
-    } catch {
-      /* localStorage no disponible — modo guiado */
-    }
-  }, [])
 
   // Cargar datos perezosamente al abrir por primera vez. Robusto ante ausencias.
   useEffect(() => {
@@ -192,6 +190,38 @@ export default function AskBot() {
       [...prev, { id: nextId(), rol: 'bot' as Rol, ...m }].slice(-MAX_HISTORIAL),
     )
   }, [])
+
+  // Respuesta para "puna" (o piso por nombre) usando indicadores + clasificarPiso.
+  const responderPiso = useCallback(
+    (pisoId: string): Omit<Mensaje, 'id' | 'rol'> => {
+      if (!datos || !datos.indicadores.length) {
+        return {
+          texto:
+            'La Puna es el piso altitudinal entre 4000 y 4800 msnm (altiplano frío). En el módulo de Pisos puedes ver cuánto presupuesto y población corresponde a cada franja altitudinal.',
+          links: [LINKS.pisos, LINKS.presupuesto],
+        }
+      }
+      let n = 0
+      let pob = 0
+      for (const ind of datos.indicadores) {
+        const meta = datos.distritos.get(ind.ubigeo)
+        const piso = clasificarPiso(ind.altitud, meta?.depto || '')
+        if (piso && piso.id === pisoId) {
+          n++
+          pob += ind.pob || 0
+        }
+      }
+      const nombre = pisoId === 'puna' ? 'la Puna (4000–4800 msnm)' : `el piso ${pisoId}`
+      return {
+        texto:
+          `En ${nombre} clasificamos aproximadamente ${n} distritos (por la altitud de su capital), con una población cercana a ${pob.toLocaleString('es-PE')} habitantes. ` +
+          'El detalle de presupuesto por piso (PIM y ejecución por franja altitudinal) está en el módulo de Pisos.',
+        links: [LINKS.pisos, LINKS.presupuesto],
+        nota: 'modo guiado',
+      }
+    },
+    [datos],
+  )
 
   // ── Lógica de respuesta en modo guiado ────────────────────────────────────
   const responderGuiado = useCallback(
@@ -261,45 +291,13 @@ export default function AskBot() {
       // 4) No entendí con reglas → marca no-confiado para derivar a la IA.
       return {
         texto:
-          'No estoy segura de haber entendido. Puedo explicar cómo leer el mapa, definir términos (PIM, devengado, ubigeo, IPT) o buscar cifras escribiendo un departamento, sector o distrito.',
+          'No estoy segura de haber entendido. Puedo explicar cómo leer el mapa, definir términos (PIM, devengado, ubigeo, IDH) o buscar cifras escribiendo un departamento, sector o distrito.',
         links: [LINKS.presupuesto, LINKS.prosperidad, LINKS.pisos, LINKS.metodologia],
         nota: 'Ninacha · modo guiado',
         confident: false,
       }
     },
-    [datos],
-  )
-
-  // Respuesta para "puna" (o piso por nombre) usando indicadores + clasificarPiso.
-  const responderPiso = useCallback(
-    (pisoId: string): Omit<Mensaje, 'id' | 'rol'> => {
-      if (!datos || !datos.indicadores.length) {
-        return {
-          texto:
-            'La Puna es el piso altitudinal entre 4000 y 4800 msnm (altiplano frío). En el módulo de Pisos puedes ver cuánto presupuesto y población corresponde a cada franja altitudinal.',
-          links: [LINKS.pisos, LINKS.presupuesto],
-        }
-      }
-      let n = 0
-      let pob = 0
-      for (const ind of datos.indicadores) {
-        const meta = datos.distritos.get(ind.ubigeo)
-        const piso = clasificarPiso(ind.altitud, meta?.depto || '')
-        if (piso && piso.id === pisoId) {
-          n++
-          pob += ind.pob || 0
-        }
-      }
-      const nombre = pisoId === 'puna' ? 'la Puna (4000–4800 msnm)' : `el piso ${pisoId}`
-      return {
-        texto:
-          `En ${nombre} clasificamos aproximadamente ${n} distritos (por la altitud de su capital), con una población cercana a ${pob.toLocaleString('es-PE')} habitantes. ` +
-          'El detalle de presupuesto por piso (PIM y ejecución por franja altitudinal) está en el módulo de Pisos.',
-        links: [LINKS.pisos, LINKS.presupuesto],
-        nota: 'modo guiado',
-      }
-    },
-    [datos],
+    [datos, responderPiso],
   )
 
   // ── Envío ──────────────────────────────────────────────────────────────────

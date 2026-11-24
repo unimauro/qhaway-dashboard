@@ -1,8 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useTheme } from '../lib/theme'
-import AskBot from './AskBot'
-import CommandSearch from './CommandSearch'
+import { API_DOCS_URL, API_REDOC_URL } from '../lib/data'
+
+// Buscador (Ctrl/Cmd+K) y asistente flotante en chunks aparte: no bloquean la primera pintura.
+const AskBot = lazy(() => import('./AskBot'))
+const CommandSearch = lazy(() => import('./CommandSearch'))
 
 const openSearch = () => window.dispatchEvent(new Event('qhaway:open-search'))
 
@@ -24,10 +27,11 @@ const NAV = [
   { to: '/pisos', label: 'Pisos Altitudinales', icon: '⛰' },
   { to: '/clima', label: 'Cambio Climático', icon: '🌡' },
   { to: '/riesgos', label: 'Riesgos Territoriales', icon: '◬' },
+  { to: '/el-nino', label: 'El Niño 2026-27', icon: '🌊' },
   { to: '/prosperidad', label: 'Desarrollo Humano y Estado', icon: '★' },
   { to: '/explorador', label: 'Explorador Multidimensional', icon: '🔍' },
   { to: '/cubo', label: 'Cubo Presupuestal (OLAP)', icon: '🧊' },
-  { to: '/historico', label: 'Evolución Regional 2004-2026', icon: '⏱' },
+  { to: '/historico', label: 'Evolución Regional', icon: '⏱' },
   { to: '/cobertura', label: 'Cobertura Territorial', icon: '◷' },
   { to: '/metodologia', label: 'Metodología y FAQ', icon: '?' },
   { to: '/contacto', label: 'Contacto', icon: '✉' },
@@ -56,13 +60,13 @@ export default function Layout() {
           <NavLink to="/contacto" aria-label="Contacto" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">✉</NavLink>
           <button onClick={openSearch} aria-label="Buscar" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">⌕</button>
           <ThemeBtn theme={theme} toggle={toggle} />
-          <button onClick={() => setOpen((o) => !o)} aria-label="Menú" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">☰</button>
+          <button onClick={() => setOpen((o) => !o)} aria-label="Menú" aria-expanded={open} aria-controls="qhaway-sidebar" className="w-9 h-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-800">☰</button>
         </div>
       </header>
 
       <div className="lg:flex">
         {/* Sidebar */}
-        <aside className={`${open ? 'block' : 'hidden'} lg:block lg:w-64 lg:shrink-0 lg:h-screen lg:sticky lg:top-0 border-r border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-4`}>
+        <aside id="qhaway-sidebar" className={`${open ? 'block' : 'hidden'} lg:block lg:w-64 lg:shrink-0 lg:h-screen lg:sticky lg:top-0 border-r border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-4`}>
           <div className="hidden lg:block mb-1">
             <div className="flex items-end gap-1.5">
               <Wordmark className="h-8" />
@@ -146,7 +150,7 @@ export default function Layout() {
             </div>
             <p><strong>QHAWAY 2.0</strong> — Observatorio Nacional de Inteligencia Territorial, Presupuesto Público, Cambio Climático, Riesgos y Desarrollo Humano. Iniciativa de la FIEECS-UNI.</p>
             <p className="mt-1">Fuente principal: <a className="text-brand-500" href="https://datosabiertos.mef.gob.pe/dataset/presupuesto-y-ejecucion-de-gasto" target="_blank" rel="noreferrer">MEF — Datos Abiertos (SIAF)</a>. Datos abiertos bajo licencia CC BY 4.0. Las cifras pueden diferir de Consulta Amigable por fecha de corte y nivel de agregación.</p>
-            <p className="mt-1"><strong>API pública</strong> (datos abiertos, reutilizables): <a className="text-brand-500" href="https://qhaway.tunky.net/docs" target="_blank" rel="noreferrer">documentación interactiva (Swagger)</a> · <a className="text-brand-500" href="https://qhaway.tunky.net/redoc" target="_blank" rel="noreferrer">ReDoc</a>.</p>
+            <p className="mt-1"><strong>API pública</strong> (datos abiertos, reutilizables): <a className="text-brand-500" href={API_DOCS_URL} target="_blank" rel="noreferrer">documentación interactiva (Swagger)</a> · <a className="text-brand-500" href={API_REDOC_URL} target="_blank" rel="noreferrer">ReDoc</a>.</p>
             <p className="mt-3 pt-3 border-t border-ink-200/60 dark:border-ink-800/60">
               Desarrollado por <strong className="text-ink-600 dark:text-ink-300">Carlos Mauro Cárdenas Fernández</strong> — Ingeniero de Sistemas (UNI) · MBA · Ciencia de datos e IA
               {' · '}<a className="text-brand-500 hover:underline" href="https://unimauro.github.io/" target="_blank" rel="noreferrer">Portafolio</a>
@@ -159,8 +163,10 @@ export default function Layout() {
       </div>
 
       {/* Buscador global (Ctrl/Cmd+K) y asistente IA flotante */}
-      <CommandSearch />
-      <AskBot />
+      <Suspense fallback={null}>
+        <CommandSearch />
+        <AskBot />
+      </Suspense>
     </div>
   )
 }

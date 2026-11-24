@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 export function Card({ children, className = '', id }: { children: ReactNode; className?: string; id?: string }) {
   return (
@@ -23,22 +23,102 @@ export function CardHeader({ title, subtitle, help, right }: { title: string; su
   )
 }
 
+// Toggletip de ayuda accesible:
+//  - área táctil de 24×24 px (WCAG 2.5.8) sin cambiar el tamaño visual del círculo «i»;
+//  - aria-expanded/aria-controls; Escape y clic fuera lo cierran;
+//  - hover abre una vista previa y el clic la FIJA (antes el clic tras el hover la cerraba);
+//  - el globo se reubica para no salirse del viewport (horizontal y vertical).
 export function HelpTip({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const open = hover || pinned
+  const id = useId()
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const tipRef = useRef<HTMLSpanElement>(null)
+
+  // Escape y clic fuera: solo mientras está abierto.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setHover(false)
+      setPinned(false)
+      btnRef.current?.focus()
+    }
+    const onDown = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setHover(false)
+        setPinned(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
+  }, [open])
+
+  // Mantener el globo dentro del viewport (ajuste directo del DOM antes de pintar).
+  useLayoutEffect(() => {
+    const tip = tipRef.current
+    if (!open || !tip) return
+    // Centrado bajo el botón con margin-left (no transform: la animación .animate-fade
+    // anima `transform` y lo dejaría en `none`, descentrando el globo).
+    const half = tip.offsetWidth / 2
+    tip.style.marginLeft = `${-half}px`
+    tip.style.top = ''
+    tip.style.bottom = ''
+    const M = 8
+    const r = tip.getBoundingClientRect()
+    let dx = 0
+    if (r.left < M) dx = M - r.left
+    else if (r.right > window.innerWidth - M) dx = window.innerWidth - M - r.right
+    tip.style.marginLeft = `${Math.round(dx - half)}px`
+    // Si no cabe debajo y sí arriba, se abre hacia arriba.
+    if (r.bottom > window.innerHeight - M && r.top - r.height - 32 > 0) {
+      tip.style.top = 'auto'
+      tip.style.bottom = '1.5rem'
+    }
+  }, [open])
+
   return (
-    <span className="relative inline-flex">
+    <span
+      ref={wrapRef}
+      className="relative inline-flex"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <button
+        ref={btnRef}
         type="button"
         aria-label="Ayuda"
-        onClick={() => setOpen((o) => !o)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        className="grid place-items-center w-4 h-4 rounded-full text-[10px] font-bold bg-ink-200 dark:bg-ink-800 text-ink-600 dark:text-ink-200 hover:bg-brand-500 hover:text-white transition"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => {
+          // Si ya estaba visible por hover, el clic lo fija (no lo cierra).
+          if (pinned) {
+            setPinned(false)
+            setHover(false)
+          } else setPinned(true)
+        }}
+        className="group/help grid place-items-center w-6 h-6 -m-1 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500"
       >
-        i
+        <span
+          aria-hidden
+          className="grid place-items-center w-4 h-4 rounded-full text-[10px] font-bold bg-ink-200 dark:bg-ink-800 text-ink-600 dark:text-ink-200 group-hover/help:bg-brand-500 group-hover/help:text-white transition"
+        >
+          i
+        </span>
       </button>
       {open && (
-        <span className="absolute z-50 left-1/2 -translate-x-1/2 top-6 w-64 p-3 rounded-xl text-xs leading-relaxed font-normal bg-ink-900 text-ink-50 shadow-xl border border-ink-800 animate-fade">
+        <span
+          ref={tipRef}
+          id={id}
+          role="note"
+          className="absolute z-50 left-1/2 top-6 w-64 max-w-[calc(100vw-1rem)] p-3 rounded-xl text-xs leading-relaxed font-normal bg-ink-900 text-ink-50 shadow-xl border border-ink-800 animate-fade"
+        >
           {children}
         </span>
       )}

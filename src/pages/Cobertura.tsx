@@ -125,7 +125,7 @@ function CoberturaBody({ geo, demar, distrito, year, distYear }: {
   }, [distrito.data, year, distYear])
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const feats: any[] = geo.features ?? []
+  const feats: any[] = useMemo(() => geo.features ?? [], [geo.features])
 
   const { values, conteo, sinDatoList, recientes } = useMemo(() => {
     const values = new Map<string, MapValue>()
@@ -279,8 +279,9 @@ function TimelineChart({ demar }: { demar: Demarcacion[] }) {
     }
     const decs = Object.keys(decadas).map(Number).sort((a, b) => a - b)
     const labels = decs.map((d) => `${d}s`)
-    let cum = sinAnio // los sin año son distritos antiguos: existían desde el inicio
-    const acumulado = decs.map((d) => (cum += decadas[d]))
+    // los sin año son distritos antiguos: existían desde el inicio
+    const acumulado: number[] = []
+    for (const d of decs) acumulado.push((acumulado.at(-1) ?? sinAnio) + decadas[d])
     return { labels, acumulado }
   }, [demar])
 

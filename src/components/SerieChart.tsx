@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { SerieNacional } from '../lib/types'
 import { Chart, PALETA } from './Chart'
 import { solesCompact, soles, pct, ejecucion } from '../lib/format'
+import { devengadoONull, ejecucionValida, faseEjecucionValida, DEVENGADO_DESDE } from '../lib/reglas'
 
 export interface PuntoMensual {
   mes: number
@@ -42,8 +43,8 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
     const ordenada = [...serie].sort((a, b) => a.year - b.year)
     const anios = ordenada.map((s) => String(s.year))
     const pims = ordenada.map((s) => s.pim)
-    // Devengado=0 (años antiguos sin dato confiable en la fuente) → hueco, no barra en cero.
-    const devs = ordenada.map((s) => (s.devengado > 0 ? s.devengado : null))
+    // Devengado sin dato (null, ≤0 o año < DEVENGADO_DESDE: la fuente trae basura) → hueco.
+    const devs = ordenada.map((s) => devengadoONull(s.year, s.devengado))
     return {
       legend: { top: 0, data: ['PIM', 'Devengado'] },
       tooltip: {
@@ -53,13 +54,14 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
         formatter: (params: any[]) => {
           const idx = params[0]?.dataIndex ?? 0
           const s = ordenada[idx]
-          const tieneDev = s.devengado > 0
-          const frac = ejecucion(s.devengado, s.pim)
+          const frac = ejecucionValida(s.year, s.devengado, s.pim)
           return [
             `<b>${s.year}</b>`,
             `PIM: ${soles(s.pim)}`,
-            tieneDev ? `Devengado: ${soles(s.devengado)}` : 'Devengado: s/d',
-            tieneDev ? `Ejecución: <b>${pct(frac)}</b>` : '',
+            faseEjecucionValida(s.year, s.devengado)
+              ? `Devengado: ${soles(s.devengado)}`
+              : `Devengado: s/d${s.year < DEVENGADO_DESDE ? ` (no confiable antes de ${DEVENGADO_DESDE})` : ''}`,
+            frac != null ? `Ejecución: <b>${pct(frac)}</b>` : '',
           ].filter(Boolean).join('<br/>')
         },
       },
@@ -91,13 +93,14 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
   const optFases = useMemo(() => {
     const s = serie[0]
     if (!s) return null
-    const fases: { label: string; valor: number | undefined; color: string }[] = [
+    const fases: { label: string; valor: number | null | undefined; color: string }[] = [
       { label: 'PIA', valor: s.pia, color: PALETA[6] },
       { label: 'PIM', valor: s.pim, color: PALETA[2] },
       { label: 'Certificado', valor: s.certificado, color: PALETA[1] },
-      { label: 'Devengado', valor: s.devengado, color: PALETA[0] },
-      { label: 'Girado', valor: s.girado, color: PALETA[7] },
+      { label: 'Devengado', valor: devengadoONull(s.year, s.devengado), color: PALETA[0] },
+      { label: 'Girado', valor: devengadoONull(s.year, s.girado), color: PALETA[7] },
     ].filter((f) => f.valor != null)
+    const fracAnio = ejecucionValida(s.year, s.devengado, s.pim)
     return {
       tooltip: {
         trigger: 'axis',
@@ -107,8 +110,8 @@ export default function SerieChart({ serie, mensual, height = 340 }: SerieChartP
           const p = params[0]
           const f = fases[p?.dataIndex ?? 0]
           const lineas = [`<b>${f.label}</b>`, soles(f.valor)]
-          if (f.label === 'Devengado' && s.pim) {
-            lineas.push(`Ejecución: <b>${pct(ejecucion(s.devengado, s.pim))}</b>`)
+          if (f.label === 'Devengado' && fracAnio != null) {
+            lineas.push(`Ejecución: <b>${pct(fracAnio)}</b>`)
           }
           return lineas.join('<br/>')
         },
