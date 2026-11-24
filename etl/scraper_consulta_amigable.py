@@ -12,13 +12,19 @@ Mecánica validada (PoC):
 
 Escribe public/data/por-departamento-historico.json INCREMENTAL y reanudable.
 Lento a propósito (pausas) para respetar el portal. Reanuda saltando años ya hechos.
+Uso: sin args → todos los años faltantes; `--force 2026 2025` re-scrapea esos años.
 """
 import requests, re, json, os, time, sys
 from bs4 import BeautifulSoup
+import corte
 
 BASE = "https://apps5.mineco.gob.pe/transparencia/Navegador/"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 OUT = os.path.join(os.path.dirname(__file__), "..", "public", "data", "por-departamento-historico.json")
+SERIE = os.path.join(os.path.dirname(__file__), "..", "public", "data", "serie-historica-oficial.json")
+# 2005: la Consulta Amigable sólo atribuye a departamento ~S/ 5 mil M de PIM (vacío de la
+# fuente); no es un total nacional válido, así que no entra en la serie nacional.
+SERIE_EXCLUIR = {2005}
 YEARS = list(range(2026, 1998, -1))  # 2026 -> 1999
 
 
@@ -73,13 +79,17 @@ def parse_rows(soup, year, code_len=2):
             continue
         m = pat.match(txt[idx])
         code, name = m.group(1), m.group(2).strip()
-        nums = [num(c) for c in txt[idx + 1:] if re.match(r"^[\d,]+(\.\d+)?$", c.replace(",", ""))]
+        nums = [num(c) for c in txt[idx + 1:] if re.match(r"^-?[\d,]+(\.\d+)?$", c.replace(",", ""))]
         if len(nums) < 6:
             continue
-        # nums: PIA, PIM, Certif, CompAnual, AtencMensual, Devengado, Girado, (Avance%)
+        # Dos layouts según el año. Anclamos desde la DERECHA (Avance% es la última):
+        #   >= 2012: PIA, PIM, Certificado, CompAnual, AtencMensual, Devengado, Girado, Avance%
+        #   <= 2011: PIA, PIM, Compromiso, Devengado, Girado, Avance%   (sin certificación)
+        # Antes se tomaba nums[5] fijo → en <=2011 leía Avance% como devengado.
         out.append({"year": year, "code": code, "nombre": name,
-                    "pia": nums[0], "pim": nums[1], "certificado": nums[2],
-                    "devengado": nums[5], "girado": nums[6] if len(nums) > 6 else nums[5]})
+                    "pia": nums[0], "pim": nums[1],
+                    "certificado": nums[2] if len(nums) >= 8 else None,
+                    "devengado": nums[-3], "girado": nums[-2]})
     return out
 
 
@@ -97,6 +107,7 @@ def scrape_year(s, year):
     sel = soup.select_one("#ctl00_CPH1_DrpYear option[selected]")
     if not sel or sel.get_text(strip=True) != str(year):
         raise RuntimeError(f"año no fijado (got {sel.get_text(strip=True) if sel else '?'})")
+    corte.registrar("por-departamento-historico.json", html, [year], "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)")
     d = fields(soup, "ctl00$CPH1$BtnDepartamentoMeta", "Departamento")
     g = soup.select_one('input[name=grp1]')
     if g:
@@ -107,14 +118,17 @@ def scrape_year(s, year):
 
 
 def main():
+    force = "--force" in sys.argv[1:]
+    args = [int(a) for a in sys.argv[1:] if a != "--force"]
+    years = args or YEARS
     data = {}
     if os.path.exists(OUT):
         for r in json.load(open(OUT)):
             data.setdefault(r["year"], []).append(r)
-    done = set(data.keys())
+    done = set(data.keys()) - (set(years) if force else set())
     print(f"reanudando: años hechos {sorted(done)}", flush=True)
     s = new_session()
-    for i, y in enumerate(YEARS):
+    for i, y in enumerate(years):
         if y in done:
             continue
         for attempt in range(3):
@@ -136,6 +150,24 @@ def main():
         time.sleep(3)  # respetar el portal
     flat = [r for k in sorted(data) for r in data[k]]
     print(f"LISTO: {len(data)} años, {len(flat)} filas", flush=True)
+    actualizar_serie(data, [y for y in years if y in data and y not in done])
+
+
+def actualizar_serie(data, years):
+    """serie-historica-oficial.json = suma nacional por año de los departamentos (mismo
+    origen). Sólo reescribe los años recién scrapeados; los demás quedan intactos."""
+    if not years:
+        return
+    out = {r["year"]: r for r in json.load(open(SERIE))} if os.path.exists(SERIE) else {}
+    for y in years:
+        if y in SERIE_EXCLUIR:
+            continue
+        out[y] = {"year": y, **{k: (round(sum(r[k] for r in data[y]), 2)
+                                    if all(r[k] is not None for r in data[y]) else None)
+                                for k in ("pia", "pim", "certificado", "devengado", "girado")}}
+    json.dump([out[y] for y in sorted(out)], open(SERIE, "w", encoding="utf-8"),
+              ensure_ascii=False, separators=(",", ":"))
+    print(f"serie-historica-oficial.json: años {sorted(years)} actualizados", flush=True)
 
 
 if __name__ == "__main__":

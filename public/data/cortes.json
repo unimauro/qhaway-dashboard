@@ -1,0 +1,46 @@
+{
+ "clima-tematico.json": {
+  "anios": [
+   2025,
+   2026
+  ],
+  "fecha_corte": "2026-11-23",
+  "fuente": "Navegador de cambio climático MEF (apps5.mineco.gob.pe/cambioclimatico2023)",
+  "generado": "2026-11-24"
+ },
+ "por-departamento-historico.json": {
+  "anios": [
+   2004,
+   2005,
+   2006,
+   2007,
+   2008,
+   2009,
+   2010,
+   2011,
+   2025,
+   2026
+  ],
+  "fecha_corte": "2026-11-23",
+  "fuente": "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)",
+  "generado": "2026-11-24"
+ },
+ "por-programa-historico.json": {
+  "anios": [
+   2025,
+   2026
+  ],
+  "fecha_corte": "2026-11-23",
+  "fuente": "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)",
+  "generado": "2026-11-24"
+ },
+ "programa-territorio-clima.json": {
+  "anios": [
+   2025,
+   2026
+  ],
+  "fecha_corte": "2026-11-23",
+  "fuente": "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)",
+  "generado": "2026-11-24"
+ }
+}

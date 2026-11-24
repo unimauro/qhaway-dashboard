@@ -1,3 +1,128 @@
 {
- "2025": {"id": "77fc3228-fa6f-4c1f-a0ed-d32520ad11ad", "devcol": "MONTO_DEVENGADO", "rows": 11438616, "hasGirado": true}
+ "2009": {
+  "id": "d806ee52-a70b-4442-af03-760c5c93d83c",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2009-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2009-Gasto.zip",
+  "lastModified": "2026-10-18T03:56:50Z",
+  "size": 276362664
+ },
+ "2010": {
+  "id": "bd55085a-72ff-41c9-996a-e458d51d6de5",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2010-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2010-Gasto.zip",
+  "lastModified": "2026-10-18T03:58:03Z",
+  "size": 306243136
+ },
+ "2011": {
+  "id": "7962df68-3055-4998-9579-d547ef354336",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2011-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2011-Gasto.zip",
+  "lastModified": "2026-10-18T16:25:45Z",
+  "size": 367717849
+ },
+ "2012": {
+  "id": "5e8017c8-ac07-4334-a17c-57d161895bff",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2012-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2012-Gasto.zip",
+  "lastModified": "2026-10-18T16:28:20Z",
+  "size": 415496783
+ },
+ "2013": {
+  "id": "135d6426-4dfd-471a-b37a-251bc35a4850",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2013-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2013-Gasto.zip",
+  "lastModified": "2026-10-19T03:04:19Z",
+  "size": 455363529
+ },
+ "2014": {
+  "id": "eec0c295-e5ef-4d48-922b-06f4c9a35871",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2014-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2014-Gasto.zip",
+  "lastModified": "2026-10-19T03:04:48Z",
+  "size": 461103436
+ },
+ "2015": {
+  "id": "cb40010f-29a9-4396-8b90-a5ca13b90cc7",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2015-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2015-Gasto.zip",
+  "lastModified": "2026-10-19T03:57:55Z",
+  "size": 467098303
+ },
+ "2016": {
+  "id": "3b8c9458-4ced-4722-aff8-0f53866bd2ec",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2016-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2016-Gasto.zip",
+  "lastModified": "2026-10-19T21:11:35Z",
+  "size": 495876873
+ },
+ "2017": {
+  "id": "17758f7a-73ce-4763-9e0d-ee82724f716f",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2017-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2017-Gasto.zip",
+  "lastModified": "2026-10-19T21:08:51Z",
+  "size": 508572440
+ },
+ "2018": {
+  "id": "37cdea93-9fef-45ab-871e-dfe84cbf7f0b",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2018-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2018-Gasto.zip",
+  "lastModified": "2026-10-20T21:21:26Z",
+  "size": 508732538
+ },
+ "2019": {
+  "id": "cac2d8c1-9ad1-4c52-93a6-a136c502dc7d",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2019-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2019-Gasto.zip",
+  "lastModified": "2026-10-20T21:30:58Z",
+  "size": 537531495
+ },
+ "2020": {
+  "id": "f907fd62-09da-4dc4-8c49-7b8df962718b",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2020-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2020-Gasto.zip",
+  "lastModified": "2026-10-20T21:39:55Z",
+  "size": 551918614
+ },
+ "2021": {
+  "id": "f87e302c-bc93-4dd3-bfb0-60df1d6bf41c",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2021-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2021-Gasto.zip",
+  "lastModified": "2026-10-20T21:52:54Z",
+  "size": 592146623
+ },
+ "2022": {
+  "id": "1904862a-a8c8-4b0f-ae2e-49e577996588",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2022-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2022-Gasto.zip",
+  "lastModified": "2026-10-20T22:08:23Z",
+  "size": 637219773
+ },
+ "2023": {
+  "id": "9e9a6d67-2687-4056-9b59-e170b945182f",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2023-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2023-Gasto.zip",
+  "lastModified": "2026-10-20T22:42:25Z",
+  "size": 647734028
+ },
+ "2024": {
+  "id": "a50cf1dc-1655-446d-95a3-de6d5351dc8c",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2024-Gasto.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2024-Gasto.zip",
+  "lastModified": "2026-10-20T22:57:46Z",
+  "size": 688655390
+ },
+ "2025": {
+  "id": "77fc3228-fa6f-4c1f-a0ed-d32520ad11ad",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.zip",
+  "lastModified": "2026-10-22T18:28:01Z",
+  "size": 709485932
+ },
+ "2026": {
+  "id": "d45f660d-6d14-438e-9d91-300084c9b85f",
+  "csv": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2026-Gasto-Mensual.csv",
+  "zip": "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2026-Gasto-Mensual.zip",
+  "lastModified": "2026-11-02T20:11:01Z",
+  "size": 578574353
+ }
 }

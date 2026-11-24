@@ -8,10 +8,12 @@ Permite cortes tipo "conservación de biodiversidad en Cusco". Para cada año:
      → distribución por departamento de ese programa.
 
 Corre LOCAL (Mac). Lento a propósito. Escribe public/data/programa-territorio-clima.json,
-incremental y reanudable por (año, code).
+incremental y reanudable por (año, code). Con --force <años> re-scrapea esos años
+(reemplaza sus filas por programa sólo cuando la nueva descarga trae datos).
 """
 import requests, re, json, os, time, sys
 from bs4 import BeautifulSoup
+import corte
 
 BASE = "https://apps5.mineco.gob.pe/transparencia/Navegador/"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
@@ -96,15 +98,18 @@ def parse_deptos(soup, year, code, programa):
 
 
 def main():
-    args = sys.argv[1:]
+    force = "--force" in sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a != "--force"]
     years = list(range(2026, 2011, -1)) if (not args or args[0] == "all") else [int(a) for a in args]
     rows = json.load(open(OUT)) if os.path.exists(OUT) else []
-    done = {(r["year"], r["code"]) for r in rows}
+    done = {(r["year"], r["code"]) for r in rows if not (force and r["year"] in years)}
     s = new_session()
     for y in years:
         try:
             s.get(f"{BASE}default.aspx?y={y}&ap=ActProy", timeout=40)
-            base_soup = BeautifulSoup(s.get(f"{BASE}Navegar.aspx?y={y}&ap=ActProy", timeout=40).text, "lxml")
+            base_html = s.get(f"{BASE}Navegar.aspx?y={y}&ap=ActProy", timeout=40).text
+            base_soup = BeautifulSoup(base_html, "lxml")
+            corte.registrar("programa-territorio-clima.json", base_html, [y], "Consulta Amigable MEF (apps5.mineco.gob.pe/transparencia/Navegador)")
             sel = base_soup.select_one("#ctl00_CPH1_DrpYear option[selected]")
             if not sel or sel.get_text(strip=True) != str(y):
                 print(f"{y}: año no fijado, skip", flush=True); continue
@@ -126,7 +131,8 @@ def main():
                     dsoup = post(s, prog_soup, "departamentometa", "Departamento", grp1=radios[code], year=y)
                     deps = parse_deptos(dsoup, y, code, names.get(code, code))
                     if len(deps) >= 1:
-                        rows += deps; done.add((y, code))
+                        rows = [r for r in rows if (r["year"], r["code"]) != (y, code)] + deps
+                        done.add((y, code))
                         json.dump(rows, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
                         print(f"  {y} {code} {names.get(code,'')[:28]:28} → {len(deps)} deptos", flush=True)
                         break
